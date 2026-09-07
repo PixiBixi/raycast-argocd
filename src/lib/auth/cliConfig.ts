@@ -112,7 +112,10 @@ export function extractToken(configYaml: string, host: string): CliToken | undef
   return undefined;
 }
 
-export async function readCliToken(host: string, deps: CliConfigReaderDeps = {}): Promise<CliToken | undefined> {
+export async function readCliToken(
+  host: string,
+  deps: CliConfigReaderDeps = {},
+): Promise<CliToken | undefined> {
   const read = deps.readFile ?? ((path: string) => readFileFs(path, "utf8"));
   const path = deps.configPath ?? defaultCliConfigPath();
 
