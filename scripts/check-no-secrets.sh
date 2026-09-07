@@ -48,7 +48,7 @@ fi
 # 3. Hostnames. Only example hosts, loopback and a short allowlist of public services may
 #    appear. `.internal.` and `.local.` are called out separately because they are the
 #    shape a private cluster endpoint takes.
-allowed_host='(([A-Za-z0-9-]+\.)*example\.(com|org|dev|net)|localhost|127\.0\.0\.1|argo-cd\.readthedocs\.io|developers\.raycast\.com|www\.raycast\.com|json\.schemastore\.org|github\.com|raw\.githubusercontent\.com|nodejs\.org|argoproj\.github\.io)'
+allowed_host='(([A-Za-z0-9-]+\.)*example\.(com|org|dev|net)|localhost|127\.0\.0\.1|argo-cd\.readthedocs\.io|developers\.raycast\.com|www\.raycast\.com|json\.schemastore\.org|github\.com|raw\.githubusercontent\.com|nodejs\.org|argoproj\.github\.io|kubernetes\.default\.svc)'
 if hits=$(tracked "${SCAN_PATHS[@]}" | xargs -r grep -nEo 'https?://[A-Za-z0-9._-]+' 2>/dev/null | grep -vE "https?://${allowed_host}" | grep -v 'check-no-secrets.sh'); then
   report "a URL points at a host that is neither an example nor an allowlisted public service" "$hits"
 fi
