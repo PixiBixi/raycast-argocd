@@ -34,8 +34,14 @@ function coverage(x, y) {
 function arrowCoverage(x, y) {
   // Triangle closing the ring, pointing clockwise.
   const tip = [CENTER + RADIUS * Math.cos(GAP_END) + 6, CENTER + RADIUS * Math.sin(GAP_END) + 46];
-  const a = [CENTER + (RADIUS + THICKNESS) * Math.cos(GAP_START), CENTER + (RADIUS + THICKNESS) * Math.sin(GAP_START)];
-  const b = [CENTER + (RADIUS - THICKNESS) * Math.cos(GAP_START), CENTER + (RADIUS - THICKNESS) * Math.sin(GAP_START)];
+  const a = [
+    CENTER + (RADIUS + THICKNESS) * Math.cos(GAP_START),
+    CENTER + (RADIUS + THICKNESS) * Math.sin(GAP_START),
+  ];
+  const b = [
+    CENTER + (RADIUS - THICKNESS) * Math.cos(GAP_START),
+    CENTER + (RADIUS - THICKNESS) * Math.sin(GAP_START),
+  ];
   let hits = 0;
   for (let sy = 0; sy < 3; sy++) {
     for (let sx = 0; sx < 3; sx++) {

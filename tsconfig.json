@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "include": ["src/**/*", "tests/**/*", "raycast-env.d.ts", "vitest.config.ts"],
+  "include": ["src/**/*", "tests/**/*", "raycast-env.d.ts", "vitest.config.ts", "eslint.config.mjs"],
   "compilerOptions": {
     "lib": ["ES2023"],
     "module": "esnext",

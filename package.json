@@ -92,15 +92,22 @@
     "publish": "npx @raycast/api@latest publish",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
     "@raycast/eslint-config": "^2.2.0",
     "@types/node": "^22.19.17",
     "@types/react": "^19.0.10",
+    "@vitest/coverage-v8": "^5.0.0",
     "eslint": "^10.10.0",
     "prettier": "^3.9.6",
     "typescript": "^5.9.3",
     "vitest": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=22.22.2"
   }
 }

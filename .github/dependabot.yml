@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # @raycast/api pins its own @types/node and @types/react, so they only ever
+      # move together. One PR, one CI run.
+      raycast:
+        patterns: ["@raycast/*", "@types/node", "@types/react"]
+      dev-tooling:
+        patterns: ["eslint*", "prettier", "typescript", "vitest", "@vitest/*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
