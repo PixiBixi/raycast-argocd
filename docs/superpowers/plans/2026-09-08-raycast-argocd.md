@@ -44,36 +44,38 @@ commit messages are exact. Every test case listed is mandatory.
 ### Task 1: Scaffold the extension
 
 **Files:**
+
 - Create: `package.json`, `tsconfig.json`, `vitest.config.ts`, `eslint.config.js`,
   `.prettierrc`, `assets/argocd.png`, `src/lib/.gitkeep`
 - Create: `tests/lib/boundaries.test.ts`
 
 **Interfaces:**
+
 - Produces: npm scripts `dev`, `build`, `lint`, `fix-lint`, `test`, `typecheck`.
 
 - [ ] **Step 1:** Write `package.json` with the Raycast manifest: `name: argocd`,
-  `title: ArgoCD`, `description`, `icon: argocd.png`, `author: pixibixi`,
-  `platforms: ["macOS"]`, `categories: ["Developer Tools"]`, `license: MIT`, and commands
-  `search-applications` (mode `view`) and `manage-instances` (mode `view`). Extension
-  preferences: `cacheTtlSeconds` (textfield, default `60`), `requestTimeoutSeconds`
-  (textfield, default `15`), `maxResults` (textfield, default `60`),
-  `argocdCliPath` (textfield, default `argocd`).
+      `title: ArgoCD`, `description`, `icon: argocd.png`, `author: pixibixi`,
+      `platforms: ["macOS"]`, `categories: ["Developer Tools"]`, `license: MIT`, and commands
+      `search-applications` (mode `view`) and `manage-instances` (mode `view`). Extension
+      preferences: `cacheTtlSeconds` (textfield, default `60`), `requestTimeoutSeconds`
+      (textfield, default `15`), `maxResults` (textfield, default `60`),
+      `argocdCliPath` (textfield, default `argocd`).
 - [ ] **Step 2:** Install dependencies. Run:
-  `npm i @raycast/api@latest @raycast/utils@latest yaml@latest` and
-  `npm i -D @raycast/eslint-config@latest @types/node@latest @types/react@latest eslint@latest prettier@latest typescript@latest vitest@latest`.
-  If `typescript@7` breaks `ray build` or `eslint`, pin `typescript@^5.9` and record the
-  reason in a comment in `package.json`. Never leave the toolchain broken to chase a version.
+      `npm i @raycast/api@latest @raycast/utils@latest yaml@latest` and
+      `npm i -D @raycast/eslint-config@latest @types/node@latest @types/react@latest eslint@latest prettier@latest typescript@latest vitest@latest`.
+      If `typescript@7` breaks `ray build` or `eslint`, pin `typescript@^5.9` and record the
+      reason in a comment in `package.json`. Never leave the toolchain broken to chase a version.
 - [ ] **Step 3:** Write `tsconfig.json` (Raycast preset: `target ES2023`, `module esnext`,
-  `moduleResolution bundler`, `jsx react-jsx`, `strict: true`,
-  `noUncheckedIndexedAccess: true`, `isolatedModules: true`, `skipLibCheck: true`).
+      `moduleResolution bundler`, `jsx react-jsx`, `strict: true`,
+      `noUncheckedIndexedAccess: true`, `isolatedModules: true`, `skipLibCheck: true`).
 - [ ] **Step 4:** Write `vitest.config.ts` restricting `include` to `tests/**/*.test.ts`, and
-  `eslint.config.js` extending `@raycast/eslint-config`.
+      `eslint.config.js` extending `@raycast/eslint-config`.
 - [ ] **Step 5:** Write `tests/lib/boundaries.test.ts`: walk `src/lib` recursively and assert no
-  file's source matches `/from ["']@raycast\//` or `/from ["']react["']/`.
+      file's source matches `/from ["']@raycast\//` or `/from ["']react["']/`.
 - [ ] **Step 6:** Run `npm test` (passes trivially, `src/lib` is empty), `npx tsc --noEmit`,
-  and `npx ray lint`. All must succeed before committing.
+      and `npx ray lint`. All must succeed before committing.
 - [ ] **Step 7:** Generate `assets/argocd.png` (512x512). Use a simple flat mark; do not embed
-  the upstream ArgoCD trademark asset.
+      the upstream ArgoCD trademark asset.
 - [ ] **Step 8:** Commit.
 
 ```bash
@@ -86,11 +88,14 @@ git commit -S -m "chore(scaffold): Raycast extension skeleton with vitest and li
 ### Task 2: Status vocabulary
 
 **Files:**
+
 - Create: `src/lib/model/status.ts`
 - Test: `tests/lib/model/status.test.ts`
 
 **Interfaces:**
+
 - Produces:
+
   ```ts
   export type HealthStatus = "Healthy" | "Progressing" | "Degraded" | "Suspended" | "Missing" | "Unknown";
   export type SyncStatus = "Synced" | "OutOfSync" | "Unknown";
@@ -104,6 +109,7 @@ git commit -S -m "chore(scaffold): Raycast extension skeleton with vitest and li
   export function operationSeverity(p: OperationPhase): Severity;
   export function isAttentionWorthy(health: HealthStatus, sync: SyncStatus): boolean;
   ```
+
   `Severity` is deliberately Raycast-free; the UI maps it to `Color`/`Icon`.
 
 - [ ] **Step 1:** Write the failing tests:
@@ -120,9 +126,9 @@ git commit -S -m "chore(scaffold): Raycast extension skeleton with vitest and li
   8. `isAttentionWorthy` is true when health is `Degraded` or `Missing`, or sync is
      `OutOfSync`; false for `Healthy` + `Synced`; false for `Suspended` + `Synced`.
 - [ ] **Step 2:** Run `npx vitest run tests/lib/model/status.test.ts`. Expected: FAIL, module
-  not found.
+      not found.
 - [ ] **Step 3:** Implement `src/lib/model/status.ts` with plain lookup records and no `switch`
-  fallthrough.
+      fallthrough.
 - [ ] **Step 4:** Run the same command. Expected: PASS.
 - [ ] **Step 5:** Commit.
 
@@ -136,26 +142,45 @@ git commit -S -m "feat(model): ArgoCD health, sync and operation status vocabula
 ### Task 3: Instance registry validation
 
 **Files:**
+
 - Create: `src/lib/config/instances.ts`
 - Test: `tests/lib/config/instances.test.ts`
 
 **Interfaces:**
+
 - Produces:
+
   ```ts
   export type Environment = "prod" | "preprod" | "dev";
   export type AuthMode = "cli" | "token";
   export interface ArgoInstance {
-    id: string; name: string; baseUrl: string; env: Environment;
-    authMode: AuthMode; allowWrite: boolean; enabled: boolean;
+    id: string;
+    name: string;
+    baseUrl: string;
+    env: Environment;
+    authMode: AuthMode;
+    allowWrite: boolean;
+    enabled: boolean;
   }
   export interface InstanceDraft {
-    id?: string; name: string; baseUrl: string; env: Environment;
-    authMode: AuthMode; allowWrite?: boolean; enabled?: boolean;
+    id?: string;
+    name: string;
+    baseUrl: string;
+    env: Environment;
+    authMode: AuthMode;
+    allowWrite?: boolean;
+    enabled?: boolean;
   }
-  export class ValidationError extends Error { readonly field: string; }
+  export class ValidationError extends Error {
+    readonly field: string;
+  }
   export function normalizeBaseUrl(raw: string): string;
   export function instanceHost(instance: Pick<ArgoInstance, "baseUrl">): string;
-  export function validateInstance(draft: InstanceDraft, existing: ArgoInstance[], newId: () => string): ArgoInstance;
+  export function validateInstance(
+    draft: InstanceDraft,
+    existing: ArgoInstance[],
+    newId: () => string,
+  ): ArgoInstance;
   export function upsertInstance(instances: ArgoInstance[], instance: ArgoInstance): ArgoInstance[];
   export function removeInstance(instances: ArgoInstance[], id: string): ArgoInstance[];
   export function parseInstances(raw: string | undefined): ArgoInstance[];
@@ -200,14 +225,20 @@ git commit -S -m "feat(config): validated ArgoCD instance registry with prod wri
 ### Task 4: argocd CLI config reader
 
 **Files:**
+
 - Create: `src/lib/auth/cliConfig.ts`
 - Test: `tests/lib/auth/cliConfig.test.ts`
 
 **Interfaces:**
+
 - Consumes: `instanceHost` from Task 3.
 - Produces:
+
   ```ts
-  export interface CliToken { token: string; expiresAt: Date | undefined; }
+  export interface CliToken {
+    token: string;
+    expiresAt: Date | undefined;
+  }
   export interface CliConfigReaderDeps {
     readFile?: (path: string) => Promise<string>;
     configPath?: string;
@@ -218,11 +249,12 @@ git commit -S -m "feat(config): validated ArgoCD instance registry with prod wri
   export function extractToken(configYaml: string, host: string): CliToken | undefined;
   export function readCliToken(host: string, deps?: CliConfigReaderDeps): Promise<CliToken | undefined>;
   ```
+
   `isExpired` defaults `skewSeconds` to 30 and returns `false` when `expiresAt` is undefined
   (an opaque token has no local expiry; let the server decide).
 
 - [ ] **Step 1:** Write the failing tests. Build the JWT fixtures in the test with a helper that
-  base64url-encodes `{"exp": <n>}` so no real token is ever committed.
+      base64url-encodes `{"exp": <n>}` so no real token is ever committed.
   1. `decodeJwtExpiry` on a three-segment token with `exp: 1757280000` returns that instant.
   2. `decodeJwtExpiry` returns `undefined` for: a token with fewer than three segments, a
      payload that is not valid base64url, valid base64url that is not JSON, and JSON without
@@ -242,7 +274,7 @@ git commit -S -m "feat(config): validated ArgoCD instance registry with prod wri
      `readFile` rejects with `ENOENT` rather than throwing.
 - [ ] **Step 2:** Run `npx vitest run tests/lib/auth/cliConfig.test.ts`. Expected: FAIL.
 - [ ] **Step 3:** Implement with the `yaml` package. Decode the JWT payload only; never verify,
-  never log it.
+      never log it.
 - [ ] **Step 4:** Run tests. Expected: PASS.
 - [ ] **Step 5:** Commit.
 
@@ -256,16 +288,22 @@ git commit -S -m "feat(auth): read the argocd CLI SSO session token and its loca
 ### Task 5: Keychain token store and SSO login trigger
 
 **Files:**
+
 - Create: `src/lib/auth/keychain.ts`, `src/lib/auth/login.ts`
 - Test: `tests/lib/auth/keychain.test.ts`, `tests/lib/auth/login.test.ts`
 
 **Interfaces:**
+
 - Consumes: `readCliToken`, `CliToken` from Task 4.
 - Produces:
+
   ```ts
   // keychain.ts
-  export type Exec = (file: string, args: string[], opts?: { input?: string }) =>
-    Promise<{ stdout: string; stderr: string; code: number }>;
+  export type Exec = (
+    file: string,
+    args: string[],
+    opts?: { input?: string },
+  ) => Promise<{ stdout: string; stderr: string; code: number }>;
   export const KEYCHAIN_SERVICE = "raycast-argocd";
   export function readTokenArgs(instanceId: string): string[];
   export function writeTokenArgs(instanceId: string, token: string): string[];
@@ -282,13 +320,19 @@ git commit -S -m "feat(auth): read the argocd CLI SSO session token and its loca
     sleep: (ms: number) => Promise<void>;
     now: () => number;
   }
-  export function runSsoLogin(host: string, cliPath: string, deps: SsoLoginDeps,
-    timeoutMs?: number, pollMs?: number): Promise<CliToken>;
+  export function runSsoLogin(
+    host: string,
+    cliPath: string,
+    deps: SsoLoginDeps,
+    timeoutMs?: number,
+    pollMs?: number,
+  ): Promise<CliToken>;
   ```
+
   `writeTokenArgs` must never place the token in argv: it uses `-w` with the token passed on
   stdin is not supported by `security`, so it uses `-w <token>` only via `input` when
   available. Implement `writeKeychainToken` with `security add-generic-password -U -s <service>
-  -a <id> -w` and the token supplied through `opts.input`; assert in the test that no argv
+-a <id> -w` and the token supplied through `opts.input`; assert in the test that no argv
   element equals the token.
 
 - [ ] **Step 1:** Write the failing keychain tests:
@@ -327,12 +371,15 @@ git commit -S -m "feat(auth): keychain token store and argocd SSO re-login helpe
 ### Task 6: Token provider
 
 **Files:**
+
 - Create: `src/lib/auth/provider.ts`
 - Test: `tests/lib/auth/provider.test.ts`
 
 **Interfaces:**
+
 - Consumes: Tasks 3, 4, 5.
 - Produces:
+
   ```ts
   export class AuthError extends Error {
     constructor(message: string, readonly instanceId: string, readonly host: string);
@@ -369,13 +416,16 @@ git commit -S -m "feat(auth): token provider selecting between the CLI session a
 ### Task 7: Errors, field projection and application summaries
 
 **Files:**
+
 - Create: `src/lib/argocd/errors.ts`, `src/lib/argocd/fields.ts`, `src/lib/argocd/project.ts`,
   `src/lib/argocd/types.ts`
 - Test: `tests/lib/argocd/project.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 2 status parsers, Task 6 `AuthError`.
 - Produces:
+
   ```ts
   // errors.ts
   export class ApiError extends Error { constructor(message: string, readonly status: number); }
@@ -415,6 +465,7 @@ git commit -S -m "feat(auth): token provider selecting between the CLI session a
   export function projectDetail(raw: unknown, instanceId: string): AppDetail | undefined;
   export function buildHaystack(parts: (string | undefined)[]): string;
   ```
+
   `LIST_FIELDS` is exactly the list in section 4.3 of the spec. `projectSummary` returns
   `undefined` for input without `metadata.name`, so a malformed item cannot poison the list.
 
@@ -453,19 +504,25 @@ git commit -S -m "feat(argocd): field projection and application summary model"
 ### Task 8: REST client
 
 **Files:**
+
 - Create: `src/lib/argocd/client.ts`
 - Test: `tests/lib/argocd/client.test.ts`
 
 **Interfaces:**
+
 - Consumes: Tasks 3, 6, 7.
 - Produces:
+
   ```ts
   export interface ClientDeps {
     fetch: typeof globalThis.fetch;
     getToken: (instance: ArgoInstance) => Promise<string>;
     timeoutMs?: number;
   }
-  export interface ListResult { apps: AppSummary[]; resourceVersion: string | undefined; }
+  export interface ListResult {
+    apps: AppSummary[];
+    resourceVersion: string | undefined;
+  }
   export class ArgoClient {
     constructor(instance: ArgoInstance, deps: ClientDeps);
     listApplications(signal?: AbortSignal): Promise<ListResult>;
@@ -499,7 +556,7 @@ git commit -S -m "feat(argocd): field projection and application summary model"
   10. No error message produced by any path contains the token.
 - [ ] **Step 2:** Run `npx vitest run tests/lib/argocd/client.test.ts`. Expected: FAIL.
 - [ ] **Step 3:** Implement. Use `AbortSignal.any` to combine the caller signal with the
-  internal timeout signal.
+      internal timeout signal.
 - [ ] **Step 4:** Run tests. Expected: PASS.
 - [ ] **Step 5:** Commit.
 
@@ -513,19 +570,32 @@ git commit -S -m "feat(argocd): projected REST client with a client-side read-on
 ### Task 9: Sync request builder
 
 **Files:**
+
 - Create: `src/lib/argocd/sync.ts`
 - Test: `tests/lib/argocd/sync.test.ts`
 
 **Interfaces:**
+
 - Produces:
+
   ```ts
   export interface SyncFormValues {
-    revision: string; prune: boolean; dryRun: boolean; applyOnly: boolean; force: boolean;
-    replace: boolean; serverSideApply: boolean; pruneLast: boolean; skipSchemaValidation: boolean;
-    retry: boolean; retryLimit: string;
+    revision: string;
+    prune: boolean;
+    dryRun: boolean;
+    applyOnly: boolean;
+    force: boolean;
+    replace: boolean;
+    serverSideApply: boolean;
+    pruneLast: boolean;
+    skipSchemaValidation: boolean;
+    retry: boolean;
+    retryLimit: string;
   }
   export interface SyncRequest {
-    revision?: string; prune?: boolean; dryRun?: boolean;
+    revision?: string;
+    prune?: boolean;
+    dryRun?: boolean;
     strategy?: { apply?: { force?: boolean }; hook?: { force?: boolean } };
     syncOptions?: { items: string[] };
     retryStrategy?: { limit: number; backoff: { duration: string; factor: number; maxDuration: string } };
@@ -567,15 +637,21 @@ git commit -S -m "feat(argocd): sync request builder covering the ArgoCD sync op
 ### Task 10: On-disk projection cache
 
 **Files:**
+
 - Create: `src/lib/cache/store.ts`
 - Test: `tests/lib/cache/store.test.ts`
 
 **Interfaces:**
+
 - Produces:
+
   ```ts
   export const CACHE_SCHEMA = 1;
   export interface CacheEntry {
-    schema: number; fetchedAt: number; resourceVersion: string | undefined; apps: AppSummary[];
+    schema: number;
+    fetchedAt: number;
+    resourceVersion: string | undefined;
+    apps: AppSummary[];
   }
   export interface CacheDeps {
     readFile: (path: string) => Promise<string>;
@@ -621,20 +697,31 @@ git commit -S -m "feat(cache): atomic per-instance projection cache with TTL"
 ### Task 11: Search scoring and default ordering
 
 **Files:**
+
 - Create: `src/lib/search/score.ts`
 - Test: `tests/lib/search/score.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 7 `AppSummary`, Task 2 `isAttentionWorthy`.
 - Produces:
+
   ```ts
-  export interface RankOptions { limit: number; recentKeys?: string[]; }
-  export interface RankResult { apps: AppSummary[]; truncated: boolean; total: number; }
-  export function appKey(app: AppSummary): string;   // `${instanceId}/${namespace}/${name}`
-  export function scoreApp(app: AppSummary, query: string): number;  // 0 means no match
+  export interface RankOptions {
+    limit: number;
+    recentKeys?: string[];
+  }
+  export interface RankResult {
+    apps: AppSummary[];
+    truncated: boolean;
+    total: number;
+  }
+  export function appKey(app: AppSummary): string; // `${instanceId}/${namespace}/${name}`
+  export function scoreApp(app: AppSummary, query: string): number; // 0 means no match
   export function rankApps(apps: AppSummary[], query: string, options: RankOptions): RankResult;
   export function defaultOrder(apps: AppSummary[], recentKeys: string[], limit: number): RankResult;
   ```
+
   Scoring tiers, highest first: exact name match, name prefix, name substring, haystack
   substring. Ties break on name ascending.
 
@@ -654,7 +741,7 @@ git commit -S -m "feat(cache): atomic per-instance projection cache with TTL"
   10. `appKey` is stable and includes the instance id.
 - [ ] **Step 2:** Run `npx vitest run tests/lib/search/score.test.ts`. Expected: FAIL.
 - [ ] **Step 3:** Implement. No allocation inside the per-app loop beyond the score number:
-  the corpus is thousands of items and this runs on every keystroke.
+      the corpus is thousands of items and this runs on every keystroke.
 - [ ] **Step 4:** Run tests. Expected: PASS.
 - [ ] **Step 5:** Commit.
 
@@ -668,54 +755,66 @@ git commit -S -m "feat(search): scored ranking with a result cap and an attentio
 ### Task 12: Raycast wiring for instances
 
 **Files:**
+
 - Create: `src/ui/preferences.ts`, `src/ui/storage.ts`, `src/ui/deps.ts`,
   `src/manage-instances.tsx`, `src/ui/InstanceForm.tsx`
 - Modify: `package.json` (commands already declared in Task 1)
 
 **Interfaces:**
+
 - Consumes: Tasks 3, 5, 6, 8, 10.
 - Produces:
+
   ```ts
   // preferences.ts
-  export interface ExtensionPreferences { cacheTtlSeconds: string; requestTimeoutSeconds: string;
-    maxResults: string; argocdCliPath: string; }
-  export function readPreferences(): { cacheTtlSeconds: number; requestTimeoutSeconds: number;
-    maxResults: number; argocdCliPath: string };
+  export interface ExtensionPreferences {
+    cacheTtlSeconds: string;
+    requestTimeoutSeconds: string;
+    maxResults: string;
+    argocdCliPath: string;
+  }
+  export function readPreferences(): {
+    cacheTtlSeconds: number;
+    requestTimeoutSeconds: number;
+    maxResults: number;
+    argocdCliPath: string;
+  };
   // storage.ts
   export function loadInstances(): Promise<ArgoInstance[]>;
   export function saveInstances(instances: ArgoInstance[]): Promise<void>;
   export function loadRecentKeys(): Promise<string[]>;
-  export function pushRecentKey(key: string): Promise<void>;   // keeps the last 10
+  export function pushRecentKey(key: string): Promise<void>; // keeps the last 10
   // deps.ts
   export function makeClient(instance: ArgoInstance): ArgoClient;
   export function makeCache(): ProjectionCache;
   export const execFileAsync: Exec;
   ```
+
   `readPreferences` clamps each numeric preference into a sane range
   (`cacheTtlSeconds` 5..3600, `requestTimeoutSeconds` 3..120, `maxResults` 10..200) and falls
   back to the default when the value does not parse.
 
 - [ ] **Step 1:** Write `tests/lib/...` coverage for the clamping logic by extracting it into
-  `src/lib/config/preferences.ts` with the signature
-  `export function clampPreferences(raw: Partial<Record<"cacheTtlSeconds"|"requestTimeoutSeconds"|"maxResults", string>>): {cacheTtlSeconds: number; requestTimeoutSeconds: number; maxResults: number}`.
-  Cases: valid values pass through; `"abc"` falls back to the default; `"0"` clamps to the
-  minimum; `"99999"` clamps to the maximum; a missing key falls back to the default.
+      `src/lib/config/preferences.ts` with the signature
+      `export function clampPreferences(raw: Partial<Record<"cacheTtlSeconds"|"requestTimeoutSeconds"|"maxResults", string>>): {cacheTtlSeconds: number; requestTimeoutSeconds: number; maxResults: number}`.
+      Cases: valid values pass through; `"abc"` falls back to the default; `"0"` clamps to the
+      minimum; `"99999"` clamps to the maximum; a missing key falls back to the default.
 - [ ] **Step 2:** Run `npx vitest run tests/lib/config/preferences.test.ts`. Expected: FAIL,
-  then implement `clampPreferences` and make it pass.
+      then implement `clampPreferences` and make it pass.
 - [ ] **Step 3:** Implement `src/ui/preferences.ts` as a thin `getPreferenceValues` +
-  `clampPreferences` wrapper, `src/ui/storage.ts` over `LocalStorage`, and `src/ui/deps.ts`
-  wiring `fetch`, `node:child_process.execFile`, `node:fs/promises` and
-  `environment.supportPath` into the lib constructors.
+      `clampPreferences` wrapper, `src/ui/storage.ts` over `LocalStorage`, and `src/ui/deps.ts`
+      wiring `fetch`, `node:child_process.execFile`, `node:fs/promises` and
+      `environment.supportPath` into the lib constructors.
 - [ ] **Step 4:** Implement `src/manage-instances.tsx`: a `List` of instances showing name,
-  base URL, environment tag, auth mode, and a red `read-only` / green `write enabled` accessory.
-  Actions: Add, Edit, Remove (with a confirmation alert), Toggle enabled, and, for
-  `authMode: "token"`, Set API token (a password `Form.PasswordField` writing to the keychain)
-  and Clear API token.
+      base URL, environment tag, auth mode, and a red `read-only` / green `write enabled` accessory.
+      Actions: Add, Edit, Remove (with a confirmation alert), Toggle enabled, and, for
+      `authMode: "token"`, Set API token (a password `Form.PasswordField` writing to the keychain)
+      and Clear API token.
 - [ ] **Step 5:** Implement `src/ui/InstanceForm.tsx`: fields name, base URL, environment
-  dropdown, auth mode dropdown, `Allow write operations` checkbox that is disabled with an
-  explanatory `info` when environment is `prod`, and `Enabled`. Submission runs
-  `validateInstance` and surfaces `ValidationError.field` through
-  `Form.ItemProps.error` rather than a toast.
+      dropdown, auth mode dropdown, `Allow write operations` checkbox that is disabled with an
+      explanatory `info` when environment is `prod`, and `Enabled`. Submission runs
+      `validateInstance` and surfaces `ValidationError.field` through
+      `Form.ItemProps.error` rather than a toast.
 - [ ] **Step 6:** Run `npx ray lint && npx tsc --noEmit && npm test`. All pass.
 - [ ] **Step 7:** Commit.
 
@@ -729,21 +828,31 @@ git commit -S -m "feat(instances): manage ArgoCD instances from Raycast with key
 ### Task 13: Search Applications command
 
 **Files:**
+
 - Create: `src/search-applications.tsx`, `src/ui/useApplications.ts`,
   `src/ui/ApplicationListItem.tsx`, `src/ui/statusVisuals.ts`, `src/ui/EmptyStates.tsx`
 - Test: `tests/lib/search/score.test.ts` already covers the ranking; no new lib test.
 
 **Interfaces:**
+
 - Consumes: Tasks 2, 7, 8, 10, 11, 12.
 - Produces:
+
   ```ts
   // useApplications.ts
   export interface InstanceState {
-    instance: ArgoInstance; apps: AppSummary[]; ageSeconds: number | undefined;
-    loading: boolean; error: Error | undefined;
+    instance: ArgoInstance;
+    apps: AppSummary[];
+    ageSeconds: number | undefined;
+    loading: boolean;
+    error: Error | undefined;
   }
-  export function useApplications(instances: ArgoInstance[]):
-    { states: InstanceState[]; apps: AppSummary[]; refresh: (instanceId?: string) => void; loading: boolean };
+  export function useApplications(instances: ArgoInstance[]): {
+    states: InstanceState[];
+    apps: AppSummary[];
+    refresh: (instanceId?: string) => void;
+    loading: boolean;
+  };
   // statusVisuals.ts
   export function severityColor(s: Severity): Color;
   export function healthIcon(h: HealthStatus): { source: Icon; tintColor: Color };
@@ -751,10 +860,10 @@ git commit -S -m "feat(instances): manage ArgoCD instances from Raycast with key
   ```
 
 - [ ] **Step 1:** Implement `useApplications`: on mount, read every enabled instance's cache
-  entry (concurrently) and set state immediately; then, for each instance whose entry is stale
-  or missing, fetch concurrently with its own abort controller and write the cache. A failed
-  instance keeps its cached apps and records the error. `refresh()` forces every instance;
-  `refresh(id)` forces one.
+      entry (concurrently) and set state immediately; then, for each instance whose entry is stale
+      or missing, fetch concurrently with its own abort controller and write the cache. A failed
+      instance keeps its cached apps and records the error. `refresh()` forces every instance;
+      `refresh(id)` forces one.
 - [ ] **Step 2:** Implement `src/search-applications.tsx`:
   - `List` with `filtering={false}`, `isLoading`, `onSearchTextChange`, `throttle={false}`.
   - A `List.Dropdown` scope selector: `All instances` plus one item per enabled instance,
@@ -767,15 +876,15 @@ git commit -S -m "feat(instances): manage ArgoCD instances from Raycast with key
   - When results are truncated, the section subtitle states
     `showing N of M, refine the search`.
 - [ ] **Step 3:** Implement `ApplicationListItem`: title is the application name, subtitle is
-  the project, accessories are the sync status icon, the health status icon, and, in `All`
-  scope, the instance name tag. Actions: `Show details` (push), `Open in ArgoCD`,
-  `Copy application name`, `Refresh` (`⌘R`), `Refresh all instances` (`⌘⇧R`).
+      the project, accessories are the sync status icon, the health status icon, and, in `All`
+      scope, the instance name tag. Actions: `Show details` (push), `Open in ArgoCD`,
+      `Copy application name`, `Refresh` (`⌘R`), `Refresh all instances` (`⌘⇧R`).
 - [ ] **Step 4:** Implement `EmptyStates`: no instance configured (action pushes the instance
-  form), every instance failing auth (action runs the SSO login through `runSsoLogin` with a
-  progress toast, then refreshes), and no match for the query.
+      form), every instance failing auth (action runs the SSO login through `runSsoLogin` with a
+      progress toast, then refreshes), and no match for the query.
 - [ ] **Step 5:** Run `npx ray lint && npx tsc --noEmit && npm test`, then `npm run dev` and
-  exercise the command against a real instance: confirm the first paint is cache-backed, that
-  typing stays responsive, and that a truncated result set reports the total.
+      exercise the command against a real instance: confirm the first paint is cache-backed, that
+      typing stays responsive, and that a truncated result set reports the total.
 - [ ] **Step 6:** Commit.
 
 ```bash
@@ -788,21 +897,23 @@ git commit -S -m "feat(search): cached multi-instance application search with ca
 ### Task 14: Application detail view
 
 **Files:**
+
 - Create: `src/ui/ApplicationDetail.tsx`
 
 **Interfaces:**
+
 - Consumes: Tasks 7, 8, 12, 13.
 
 - [ ] **Step 1:** Implement a `List` with `isShowingDetail` or a `Detail` view (choose `Detail`,
-  the content is a single record) rendering: name, instance and environment, project, sync and
-  health with their icons in the metadata panel, destination cluster and namespace, source repo
-  / path / target revision, current revision (short), last sync revision and time, operation
-  phase and message, and any `status.conditions` as a warning list.
+      the content is a single record) rendering: name, instance and environment, project, sync and
+      health with their icons in the metadata panel, destination cluster and namespace, source repo
+      / path / target revision, current revision (short), last sync revision and time, operation
+      phase and message, and any `status.conditions` as a warning list.
 - [ ] **Step 2:** Load through `getApplication(name, namespace)` with `useCachedPromise`, seeded
-  from the list's `AppSummary` so the view paints immediately.
+      from the list's `AppSummary` so the view paints immediately.
 - [ ] **Step 3:** Actions in the order given by spec section 4.5. `Sync…` and `Quick sync` are
-  rendered only when `instance.allowWrite` is true. `Refresh application` and
-  `Hard refresh` (`⌘⇧R`) call `getApplication` with the `refresh` parameter and show a toast.
+      rendered only when `instance.allowWrite` is true. `Refresh application` and
+      `Hard refresh` (`⌘⇧R`) call `getApplication` with the `refresh` parameter and show a toast.
 - [ ] **Step 4:** On mount, `pushRecentKey(appKey(app))`.
 - [ ] **Step 5:** Run `npx ray lint && npx tsc --noEmit && npm test`, then exercise in `npm run dev`.
 - [ ] **Step 6:** Commit.
@@ -817,31 +928,33 @@ git commit -S -m "feat(app): application detail view with refresh and deep link 
 ### Task 15: Sync form and live sync status
 
 **Files:**
+
 - Create: `src/ui/SyncForm.tsx`, `src/ui/SyncStatus.tsx`
 
 **Interfaces:**
+
 - Consumes: Tasks 8, 9, 14.
 
 - [ ] **Step 1:** Implement `SyncForm`: a `Form` whose first field is the `Dry run` checkbox,
-  then `Revision` (placeholder `leave empty to use the target revision`), `Prune`,
-  `Apply only (skip hooks)`, `Force`, `Replace`, `Server-side apply`, `Prune last`,
-  `Skip schema validation`, `Retry` and `Retry limit`. The form's navigation title carries the
-  instance name and environment. A `Form.Description` shows `describeSyncRequest` of the
-  current values.
+      then `Revision` (placeholder `leave empty to use the target revision`), `Prune`,
+      `Apply only (skip hooks)`, `Force`, `Replace`, `Server-side apply`, `Prune last`,
+      `Skip schema validation`, `Retry` and `Retry limit`. The form's navigation title carries the
+      instance name and environment. A `Form.Description` shows `describeSyncRequest` of the
+      current values.
 - [ ] **Step 2:** On submit, build the body with `buildSyncRequest`, surface a `ValidationError`
-  on the `retryLimit` field, then show a `confirmAlert` whose title is
-  `Sync <app> on <instance>?` with a destructive primary action, unless `dryRun` is set.
+      on the `retryLimit` field, then show a `confirmAlert` whose title is
+      `Sync <app> on <instance>?` with a destructive primary action, unless `dryRun` is set.
 - [ ] **Step 3:** Call `client.sync(...)`, show a success toast, `pop()` the form and push
-  `SyncStatus`.
+      `SyncStatus`.
 - [ ] **Step 4:** Implement `SyncStatus`: poll `getApplicationStatus` every 2000 ms while the
-  phase is `Running` or `Terminating`, stop otherwise, and always stop on unmount. Render the
-  phase with its severity colour, the message, started and finished timestamps, and the sync
-  result resources as a list with per-resource status and message. Provide
-  `Open in ArgoCD` and `Stop watching` actions.
+      phase is `Running` or `Terminating`, stop otherwise, and always stop on unmount. Render the
+      phase with its severity colour, the message, started and finished timestamps, and the sync
+      result resources as a list with per-resource status and message. Provide
+      `Open in ArgoCD` and `Stop watching` actions.
 - [ ] **Step 5:** Verify the read-only path: point the extension at a `prod` instance, confirm
-  `Sync…` and `Quick sync` do not appear, then temporarily flip `allowWrite` in a scratch
-  instance pointing at a non-production ArgoCD and confirm a dry-run sync completes and the
-  status view follows it to `Succeeded`.
+      `Sync…` and `Quick sync` do not appear, then temporarily flip `allowWrite` in a scratch
+      instance pointing at a non-production ArgoCD and confirm a dry-run sync completes and the
+      status view follows it to `Succeeded`.
 - [ ] **Step 6:** Run `npx ray lint && npx tsc --noEmit && npm test`.
 - [ ] **Step 7:** Commit.
 
@@ -855,21 +968,22 @@ git commit -S -m "feat(sync): sync form with ArgoCD sync options and a live stat
 ### Task 16: Documentation and release hygiene
 
 **Files:**
+
 - Create: `README.md`, `CHANGELOG.md`, `LICENSE`
 - Modify: `package.json` (final metadata)
 
 - [ ] **Step 1:** Write `README.md` as a usage reference: what the extension does, how to
-  install it (`npm install && npm run dev`), how to add an instance, the two auth modes with
-  the exact `argocd login` command to run, a table of commands, a table of preferences, a table
-  of the sync options and the ArgoCD field each maps to, and a troubleshooting section covering
-  "no token found", "401 after an hour", "instance shows cached data", and
-  "sync action is missing". No internal hostname anywhere.
+      install it (`npm install && npm run dev`), how to add an instance, the two auth modes with
+      the exact `argocd login` command to run, a table of commands, a table of preferences, a table
+      of the sync options and the ArgoCD field each maps to, and a troubleshooting section covering
+      "no token found", "401 after an hour", "instance shows cached data", and
+      "sync action is missing". No internal hostname anywhere.
 - [ ] **Step 2:** Write `CHANGELOG.md` with an `Unreleased` entry listing the initial feature
-  set, and `LICENSE` (MIT).
+      set, and `LICENSE` (MIT).
 - [ ] **Step 3:** Run the full gate: `npm test && npx tsc --noEmit && npx ray lint && npx ray build`.
 - [ ] **Step 4:** Verify no secret leaked:
-  `git grep -niE "eqtv|equativ|okta|internal\.|Bearer [A-Za-z0-9]" -- . ':!docs'` returns
-  nothing actionable.
+      `git grep -niE "eqtv|equativ|okta|internal\.|Bearer [A-Za-z0-9]" -- . ':!docs'` returns
+      nothing actionable.
 - [ ] **Step 5:** Commit.
 
 ```bash
@@ -898,3 +1012,159 @@ two and is acyclic because `sync.ts` imports nothing from `client.ts`.
 
 **Ordering note.** Task 8 depends on the `SyncRequest` type from Task 9. Implement the type
 declarations of Task 9 first if Task 8 is executed alone, or execute 9 before 8.
+
+---
+
+## Amendments
+
+Three requirements arrived after the plan was written. They are recorded here rather than
+rewritten into the tasks above, so the plan stays readable as what was decided when.
+
+### A1: hardened GitHub Actions CI (delivered ahead of Task 4)
+
+**Files:** `.github/workflows/ci.yml`, `.github/workflows/github-actions.yml`,
+`.github/dependabot.yml`, `scripts/check-no-secrets.sh`, `.nvmrc`, `.prettierignore`
+
+Every job pins its actions by commit SHA, runs `step-security/harden-runner` in audit mode,
+checks out with `persist-credentials: false`, and inherits `permissions: contents: read`.
+Jobs: `quality` (lint, format check, typecheck, `ray build`), `test` on Node 22/24/26,
+`coverage` with an uploaded artifact, and `secrets`, which runs `scripts/check-no-secrets.sh`.
+A separate `github-actions` workflow runs zizmor over the workflows themselves.
+
+`check-no-secrets.sh` matches on the _shape_ of what must not be published (JWT literals,
+hardcoded bearer values, `gke_<project>_` context names, non-example hostnames,
+`*.internal.*` hosts, non-noreply email addresses) rather than on a list of the organisation's
+own names, because such a list would itself leak them.
+
+### A2: navigate from an ApplicationSet to the applications it generated
+
+Spec section 4.8. Amends Tasks 7, 8, 11, 13 and 14, and adds Task 17.
+
+- **Task 7 amendment.** `LIST_FIELDS` gains `items.metadata.ownerReferences`. `AppSummary`
+  gains `appSetName: string | undefined`, projected from
+  `metadata.ownerReferences.find(r => r.kind === "ApplicationSet")?.name`. New test cases:
+  an application with an ApplicationSet owner projects the name; an application whose only
+  owner reference is another kind projects `undefined`; an application with no owner
+  references projects `undefined`. `appSetName` joins the haystack so an ApplicationSet name
+  is searchable from the main command.
+- **Task 8 amendment.** `ArgoClient` gains
+  `listApplicationSets(signal?: AbortSignal): Promise<AppSetListResult>` hitting
+  `GET /api/v1/applicationsets?fields=<APPSET_FIELDS>`, and
+  `appSetUrl(name: string, namespace: string): string` returning
+  `${baseUrl}/applicationsets/${namespace}/${name}`. Same error mapping as the applications
+  list, tested the same way.
+- **Task 11 amendment.** `search/score.ts` gains
+  `filterByAppSet(apps: AppSummary[], instanceId: string, namespace: string, appSetName: string): AppSummary[]`.
+  Test cases: matches on all three keys; an application with the same `appSetName` in another
+  namespace is excluded; an application from another instance is excluded.
+
+- [ ] **Task 17: ApplicationSets**
+
+  **Files:** Create `src/lib/argocd/appset.ts`, `src/search-applicationsets.tsx`,
+  `src/ui/AppSetListItem.tsx`; Test `tests/lib/argocd/appset.test.ts`; Modify `package.json`
+  (third command `search-applicationsets`, title `Search ApplicationSets`).
+
+  **Interfaces produced:**
+
+  ```ts
+  export const APPSET_FIELDS: readonly string[];
+  export interface AppSetSummary {
+    instanceId: string;
+    name: string;
+    namespace: string;
+    project: string | undefined;
+    conditionError: string | undefined;
+    haystack: string;
+  }
+  export interface AppSetRollup {
+    total: number;
+    outOfSync: number;
+    degraded: number;
+  }
+  export function projectAppSet(raw: unknown, instanceId: string): AppSetSummary | undefined;
+  export function rollupAppSet(apps: AppSummary[], appSet: AppSetSummary): AppSetRollup;
+  export function rankAppSets(sets: AppSetSummary[], query: string, limit: number): RankResult<AppSetSummary>;
+  ```
+
+  - [ ] Step 1: write the failing tests. Cases: `projectAppSet` fills name, namespace and
+        `spec.template.spec.project`; it returns `undefined` without a name; it extracts the
+        message of a `status.conditions` entry whose `type` is `ErrorOccurred` and whose `status`
+        is `"True"`, and leaves `conditionError` undefined when that condition reads `"False"` or
+        is absent. `rollupAppSet` counts only applications whose `appSetName` and `namespace` and
+        `instanceId` all match, and counts `outOfSync` and `degraded` with the same predicates the
+        status vocabulary uses. `rollupAppSet` on an ApplicationSet that owns nothing returns
+        zeroes. `rankAppSets` reuses the scorer and cap semantics of `rankApps`.
+  - [ ] Step 2: run `npx vitest run tests/lib/argocd/appset.test.ts`. Expected: FAIL.
+  - [ ] Step 3: implement `appset.ts`. Generalise `RankResult` to `RankResult<T>` in
+        `search/score.ts` and update Task 11's tests accordingly.
+  - [ ] Step 4: run the suite. Expected: PASS.
+  - [ ] Step 5: implement `src/search-applicationsets.tsx`: same cache and scope-dropdown
+        treatment as the applications command, rows titled with the ApplicationSet name,
+        subtitled with the project, accessorised with the rollup
+        (`N apps`, `N out of sync`, `N degraded`) and a red tag when `conditionError` is set.
+        Actions: **Show generated applications** (pushes the shared application list component
+        filtered with `filterByAppSet`), **Open in ArgoCD**, **Copy name**, **Refresh**.
+  - [ ] Step 6: in `ApplicationDetail` (Task 14), render `appSetName` in the metadata panel
+        when set, with an action pushing the same filtered list.
+  - [ ] Step 7: `npx ray lint && npx tsc --noEmit && npm test`, then exercise in `npm run dev`.
+  - [ ] Step 8: commit
+        `feat(appsets): browse ApplicationSets and the applications they generate`.
+
+### A3: reachability flag for VPN-gated instances
+
+Spec section 4.9. Adds Task 18, amends Tasks 12 and 13.
+
+- [ ] **Task 18: reachability probe**
+
+  **Files:** Create `src/lib/argocd/probe.ts`; Test `tests/lib/argocd/probe.test.ts`;
+  Modify `src/lib/argocd/errors.ts` (add `UnreachableError`), `package.json`
+  (preference `probeTimeoutSeconds`, default `4`, clamped 1..30).
+
+  **Interfaces produced:**
+
+  ```ts
+  export type ReachabilityState = "reachable" | "unreachable" | "unknown";
+  export interface Reachability {
+    state: ReachabilityState;
+    checkedAt: number;
+    latencyMs: number | undefined;
+    version: string | undefined;
+    reason: string | undefined;
+  }
+  export interface ProbeDeps {
+    fetch: typeof globalThis.fetch;
+    now: () => number;
+    timeoutMs: number;
+  }
+  export const UNKNOWN_REACHABILITY: Reachability;
+  export function probeInstance(instance: ArgoInstance, deps: ProbeDeps): Promise<Reachability>;
+  export function isProbeStale(reachability: Reachability, now: number, ttlMs?: number): boolean;
+  ```
+
+  `ttlMs` defaults to 30000.
+
+  - [ ] Step 1: write the failing tests. Cases: a 200 with `{"Version":"v3.5.1"}` yields
+        `reachable` with that version and a latency computed from the injected clock; a 401, a 404
+        and a 503 all yield `reachable` with `version: undefined`, because the server answered;
+        a `fetch` rejection yields `unreachable` with a reason mentioning the network; an abort
+        yields `unreachable` with a reason mentioning the timeout; the request carries **no**
+        `Authorization` header (asserted on the recorded request); the request targets
+        `${baseUrl}/api/v1/version`; a 200 whose body is not JSON still yields `reachable` with
+        `version: undefined`; `isProbeStale` is false inside the TTL, true past it, and true for
+        `UNKNOWN_REACHABILITY`.
+  - [ ] Step 2: run `npx vitest run tests/lib/argocd/probe.test.ts`. Expected: FAIL.
+  - [ ] Step 3: implement.
+  - [ ] Step 4: run the suite. Expected: PASS.
+  - [ ] Step 5: commit `feat(probe): unauthenticated reachability probe for VPN-gated instances`.
+
+- **Task 12 amendment.** `Manage Instances` renders the reachability of each instance as an
+  accessory: green `v3.5.1 in 84 ms`, red `unreachable, check your VPN`, grey `not checked`.
+  It probes every instance on mount and on `⌘T`. `src/ui/storage.ts` gains
+  `loadReachability(): Promise<Record<string, Reachability>>` and
+  `saveReachability(map): Promise<void>` over `LocalStorage`.
+- **Task 13 amendment.** `useApplications` probes every enabled instance concurrently before
+  fetching, reusing a cached probe result that is not stale. An instance whose probe says
+  `unreachable` is never queried: its `InstanceState` carries `UnreachableError`, keeps its
+  cached applications, and its section subtitle reads
+  `cached N minutes ago, instance unreachable`. `InstanceState` gains
+  `reachability: Reachability`.

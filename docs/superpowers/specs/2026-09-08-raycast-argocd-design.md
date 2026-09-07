@@ -50,6 +50,7 @@ src/
     model/        status vocabulary (semantic enums, no Raycast types)
   ui/             React components, Raycast-aware
   search-applications.tsx     command entry point
+  search-applicationsets.tsx  command entry point
   manage-instances.tsx        command entry point
 ```
 
@@ -283,6 +284,46 @@ application can immediately see its siblings.
 The filtered list is a pure client-side filter over the cache, so it opens instantly and is
 never a second network round trip.
 
+### 4.9 Reachability
+
+The instances sit behind a VPN. Off it, every request hangs until its timeout, which turns a
+15 s request timeout into a 15 s command that ends in a stack of errors. That is the wrong
+failure: the operator does not have a broken instance, they have a disconnected laptop, and the
+extension should say so in under a second.
+
+`GET {baseUrl}/api/v1/version` answers 200 without authentication on ArgoCD 3.x, which makes it
+the right probe: it proves the network path and the server, it costs one small response, and it
+cannot be confused with an authorisation problem.
+
+```ts
+type ReachabilityState = "reachable" | "unreachable" | "unknown";
+interface Reachability {
+  state: ReachabilityState; checkedAt: number;
+  latencyMs: number | undefined; version: string | undefined; reason: string | undefined;
+}
+```
+
+The probe uses its own short timeout (`probeTimeoutSeconds`, default 4) rather than the request
+timeout: waiting 15 s to learn the VPN is down is the exact problem being solved. Any HTTP
+response at all, including a 4xx or a 5xx, counts as `reachable` - the server answered, so the
+network path exists. Only a transport failure or the timeout is `unreachable`.
+
+Results are cached per instance in `LocalStorage` with a 30 s TTL, so opening the command twice
+in a row does not re-probe, and a VPN that just came up is picked up on the next open.
+
+How it is used:
+
+- **Manage Instances** shows the state per row: a green dot with the server version and the
+  round-trip time, a red dot reading `unreachable, check your VPN`, or a grey dot before the
+  first probe. `⌘T` re-probes every instance.
+- **Search Applications** probes every enabled instance concurrently on mount, before any
+  applications call. An instance that comes back `unreachable` is not queried at all: its
+  section renders from cache with the subtitle `cached N minutes ago, instance unreachable`.
+  This is what keeps the command fast off the VPN instead of slow and broken.
+- Because the probe is unauthenticated, a `reachable` instance that then answers 401 is
+  unambiguously an expired session, and the UI offers the SSO login rather than a network
+  error.
+
 ### 4.7 Error handling
 
 Errors are typed in `lib/argocd/errors.ts` and each maps to one recoverable UI state:
@@ -294,6 +335,7 @@ Errors are typed in `lib/argocd/errors.ts` and each maps to one recoverable UI s
 | `NotFoundError`         | 404                        | app removed; offer a refresh |
 | `TimeoutError`          | abort                      | falls back to cache, shows staleness |
 | `NetworkError`          | fetch reject               | falls back to cache, shows staleness |
+| `UnreachableError`      | probe says unreachable     | "check your VPN", cache still rendered |
 | `ReadOnlyInstanceError` | local guard                | should be unreachable; shown as a bug |
 | `ApiError`              | any other non-2xx          | status + server message |
 
@@ -318,7 +360,13 @@ Covered:
 - `argocd/sync`: every checkbox combination that changes the body shape, and that an all-default
   form produces `{}` plus nothing else.
 - `cache/store`: TTL boundaries, corrupt JSON, wrong schema version, concurrent write safety.
-- `search/score`: ranking order, cap, empty query behaviour, no-match, case folding.
+- `search/score`: ranking order, cap, empty query behaviour, no-match, case folding, filtering
+  by parent ApplicationSet.
+- `argocd/probe`: 200 is reachable with a latency and a version, 4xx and 5xx are reachable, a
+  transport failure and an abort are unreachable, the probe carries no Authorization header,
+  and the TTL logic re-probes only after it lapses.
+- `argocd/appset`: projecting an ApplicationSet, and rolling up the applications a given
+  ApplicationSet owns out of the applications cache.
 - `model/status`: exhaustive mapping of ArgoCD health and sync vocabularies, unknown values.
 
 Fixtures use `https://argocd.example.com`, application names like `app-one`, project `team-a`.
@@ -332,3 +380,8 @@ No fixture is derived from a real cluster.
   state.
 - **Okta token lifetime** (60 min): re-login is a two-keystroke action, not a reconfiguration.
 - **Raycast `LocalStorage` is not encrypted**: hence no token in it, keychain only.
+- **The probe endpoint is unauthenticated**: it is used only to decide whether to attempt a
+  request. Nothing in the UI treats a successful probe as an authorisation.
+- **ApplicationSets in a namespace the user cannot list**: the applications list is the source
+  of truth for the rollup, so an ApplicationSet the user cannot see simply does not appear;
+  its applications, if visible, still show their parent name in the detail view.
