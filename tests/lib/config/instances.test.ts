@@ -43,7 +43,9 @@ describe("normalizeBaseUrl", () => {
   });
 
   it("preserves a base path without its trailing slash", () => {
-    expect(normalizeBaseUrl("https://gateway.example.com/argocd/")).toBe("https://gateway.example.com/argocd");
+    expect(normalizeBaseUrl("https://gateway.example.com/argocd/")).toBe(
+      "https://gateway.example.com/argocd",
+    );
   });
 
   it("prepends https when the scheme is missing", () => {

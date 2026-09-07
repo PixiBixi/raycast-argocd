@@ -261,14 +261,17 @@ describe("sync", () => {
 
 describe("deep links", () => {
   it("builds the web UI URL of an application", () => {
-    expect(new ArgoClient(instance(), deps(vi.fn() as unknown as typeof fetch)).appUrl("app-one", "argocd")).toBe(
-      "https://argocd.example.com/applications/argocd/app-one",
-    );
+    expect(
+      new ArgoClient(instance(), deps(vi.fn() as unknown as typeof fetch)).appUrl("app-one", "argocd"),
+    ).toBe("https://argocd.example.com/applications/argocd/app-one");
   });
 
   it("builds the web UI URL of an ApplicationSet", () => {
     expect(
-      new ArgoClient(instance(), deps(vi.fn() as unknown as typeof fetch)).appSetUrl("team-a-set", "team-a-apps"),
+      new ArgoClient(instance(), deps(vi.fn() as unknown as typeof fetch)).appSetUrl(
+        "team-a-set",
+        "team-a-apps",
+      ),
     ).toBe("https://argocd.example.com/applicationsets/team-a-apps/team-a-set");
   });
 });

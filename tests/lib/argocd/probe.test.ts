@@ -46,7 +46,10 @@ function deps(response: () => Response | Promise<Response>, calls: Recorded[] = 
 
 describe("probeInstance", () => {
   it("reports the version and the round-trip time on a 200", async () => {
-    const result = await probeInstance(INSTANCE, deps(() => Response.json({ Version: "v3.5.1" })));
+    const result = await probeInstance(
+      INSTANCE,
+      deps(() => Response.json({ Version: "v3.5.1" })),
+    );
     expect(result).toMatchObject({ state: "reachable", version: "v3.5.1", reason: undefined });
     expect(result.latencyMs).toBe(40);
     expect(result.checkedAt).toBeGreaterThan(0);
@@ -54,26 +57,41 @@ describe("probeInstance", () => {
 
   it("targets the public version endpoint", async () => {
     const calls: Recorded[] = [];
-    await probeInstance(INSTANCE, deps(() => Response.json({ Version: "v3.5.1" }), calls));
+    await probeInstance(
+      INSTANCE,
+      deps(() => Response.json({ Version: "v3.5.1" }), calls),
+    );
     expect(calls[0]?.url).toBe("https://argocd.example.com/api/v1/version");
   });
 
   it("never sends an Authorization header, so a 401 stays unambiguous", async () => {
     const calls: Recorded[] = [];
-    await probeInstance(INSTANCE, deps(() => Response.json({ Version: "v3.5.1" }), calls));
+    await probeInstance(
+      INSTANCE,
+      deps(() => Response.json({ Version: "v3.5.1" }), calls),
+    );
     const headers = calls[0]?.init.headers as Record<string, string>;
     expect(Object.keys(headers).map((key) => key.toLowerCase())).not.toContain("authorization");
   });
 
-  it.each([401, 403, 404, 500, 503])("treats a %i as reachable, because the server answered", async (status) => {
-    const result = await probeInstance(INSTANCE, deps(() => new Response("", { status })));
-    expect(result.state).toBe("reachable");
-    expect(result.version).toBeUndefined();
-    expect(result.reason).toBe(`answered ${status}`);
-  });
+  it.each([401, 403, 404, 500, 503])(
+    "treats a %i as reachable, because the server answered",
+    async (status) => {
+      const result = await probeInstance(
+        INSTANCE,
+        deps(() => new Response("", { status })),
+      );
+      expect(result.state).toBe("reachable");
+      expect(result.version).toBeUndefined();
+      expect(result.reason).toBe(`answered ${status}`);
+    },
+  );
 
   it("stays reachable when a 200 body is not JSON", async () => {
-    const result = await probeInstance(INSTANCE, deps(() => new Response("not json", { status: 200 })));
+    const result = await probeInstance(
+      INSTANCE,
+      deps(() => new Response("not json", { status: 200 })),
+    );
     expect(result).toMatchObject({ state: "reachable", version: undefined, reason: undefined });
   });
 
@@ -101,7 +119,10 @@ describe("probeInstance", () => {
 
   it("uses its own short timeout rather than the request timeout", async () => {
     const calls: Recorded[] = [];
-    await probeInstance(INSTANCE, deps(() => Response.json({}), calls));
+    await probeInstance(
+      INSTANCE,
+      deps(() => Response.json({}), calls),
+    );
     expect(calls[0]?.init.signal).toBeInstanceOf(AbortSignal);
   });
 });

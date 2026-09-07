@@ -14,12 +14,16 @@
  *   - `repo`      restrict to one repository URL
  *   - `appNamespace` restrict to one application namespace
  *
- * Measured on a real instance holding 2053 applications:
+ * Measured on a real instance holding 2053 applications (tests/lib/real-instance.test.ts
+ * re-runs the projection and ranking half of this against your own instance):
  *   - compact JSON of the full list        30.2 MB
  *   - the same list gzipped                 2.97 MB   (what actually crosses the network)
  *   - JSON.parse of the full list             85 ms
  *   - peak heap while projecting              ~51 MB
- *   - the projection that gets cached        289 kB
+ *   - the projection that gets cached        1.49 MB
+ *   - applications dropped by the projection       0
+ *   - ranking the whole corpus, worst case   7.4 ms   (a single-letter query, so every row
+ *                                                      matches; a keystroke has ~16 ms)
  *
  * That is why the read path is what it is: one full list per refresh is affordable, holding it
  * is not, and re-fetching it on every keystroke would be absurd. So the response is projected

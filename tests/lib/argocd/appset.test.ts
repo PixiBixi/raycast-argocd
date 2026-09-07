@@ -71,7 +71,11 @@ describe("projectAppSet", () => {
 
 describe("filterByAppSet", () => {
   const owned = app({ name: "generated-one", namespace: "team-a-apps", appSetName: "team-a-set" });
-  const otherNamespace = app({ name: "same-name-elsewhere", namespace: "team-b-apps", appSetName: "team-a-set" });
+  const otherNamespace = app({
+    name: "same-name-elsewhere",
+    namespace: "team-b-apps",
+    appSetName: "team-a-set",
+  });
   const otherInstance = app({
     name: "generated-two",
     namespace: "team-a-apps",
@@ -81,7 +85,12 @@ describe("filterByAppSet", () => {
   const unowned = app({ name: "hand-written", namespace: "team-a-apps", appSetName: undefined });
 
   it("matches on instance, namespace and owner name together", () => {
-    const result = filterByAppSet([owned, otherNamespace, otherInstance, unowned], "i1", "team-a-apps", "team-a-set");
+    const result = filterByAppSet(
+      [owned, otherNamespace, otherInstance, unowned],
+      "i1",
+      "team-a-apps",
+      "team-a-set",
+    );
     expect(result.map((a) => a.name)).toEqual(["generated-one"]);
   });
 
@@ -98,10 +107,34 @@ describe("rollupAppSet", () => {
 
   it("counts only the applications it owns", () => {
     const apps = [
-      app({ name: "a", namespace: "team-a-apps", appSetName: "team-a-set", sync: "Synced", health: "Healthy" }),
-      app({ name: "b", namespace: "team-a-apps", appSetName: "team-a-set", sync: "OutOfSync", health: "Healthy" }),
-      app({ name: "c", namespace: "team-a-apps", appSetName: "team-a-set", sync: "Synced", health: "Degraded" }),
-      app({ name: "d", namespace: "team-a-apps", appSetName: "other-set", sync: "OutOfSync", health: "Degraded" }),
+      app({
+        name: "a",
+        namespace: "team-a-apps",
+        appSetName: "team-a-set",
+        sync: "Synced",
+        health: "Healthy",
+      }),
+      app({
+        name: "b",
+        namespace: "team-a-apps",
+        appSetName: "team-a-set",
+        sync: "OutOfSync",
+        health: "Healthy",
+      }),
+      app({
+        name: "c",
+        namespace: "team-a-apps",
+        appSetName: "team-a-set",
+        sync: "Synced",
+        health: "Degraded",
+      }),
+      app({
+        name: "d",
+        namespace: "team-a-apps",
+        appSetName: "other-set",
+        sync: "OutOfSync",
+        health: "Degraded",
+      }),
       app({ name: "e", namespace: "team-b-apps", appSetName: "team-a-set", sync: "OutOfSync" }),
     ];
     expect(rollupAppSet(apps, appSet)).toEqual({ total: 3, outOfSync: 1, degraded: 1, attention: 2 });
