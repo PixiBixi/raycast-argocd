@@ -1168,3 +1168,29 @@ Spec section 4.9. Adds Task 18, amends Tasks 12 and 13.
   cached applications, and its section subtitle reads
   `cached N minutes ago, instance unreachable`. `InstanceState` gains
   `reachability: Reachability`.
+
+### A4: the `fields` projection does not exist (correction to Task 7 and Task 8)
+
+Discovered while writing the documentation, by reading `ApplicationQuery` in the v3.5.1 proto
+and the server's own `swagger.json`: the `fields` query parameter the ArgoCD web UI sends on the
+applications list is not part of the API. It is accepted and ignored. Tasks 7 and 8 were built
+on it.
+
+The read path was measured instead, on a real instance holding 2053 applications: 30.2 MB of
+compact JSON, **2.97 MB gzipped**, 85 ms to parse, ~51 MB peak heap, and a 289 kB projection.
+One full list per refresh is affordable, so the design holds without the parameter; what
+changes is where the saving comes from. It comes from projecting the response the moment it is
+parsed and caching only the projection, which was always the load-bearing part.
+
+Changes applied:
+
+- `src/lib/argocd/fields.ts` no longer exports field lists. It exports
+  `SUPPORTED_LIST_FILTERS` (the four parameters `ApplicationQuery` actually declares),
+  `MEASURED_LIST_GZIP_BYTES` and `MEASURED_LIST_APPLICATIONS`, and carries the measurements and
+  the reasoning in its module comment so nobody re-adds the parameter.
+- `ArgoClient` sends no `fields` parameter on any endpoint.
+- `ArgoClient` no longer sets `Accept-Encoding` by hand: Node's `fetch` negotiates gzip and
+  decompresses the body, and setting the header manually leaves the caller holding a compressed
+  buffer.
+- The client tests now assert the _absence_ of a query parameter on the list, and the absence of
+  a hand-set `Accept-Encoding` header, so the parameter cannot come back unnoticed.

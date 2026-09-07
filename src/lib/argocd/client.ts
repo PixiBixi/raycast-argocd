@@ -1,10 +1,12 @@
 /**
  * The ArgoCD REST client.
  *
- * Every read goes through a field projection (see fields.ts), every request has its own
- * timeout, and every write is refused unless the instance is explicitly marked writable. That
- * last check duplicates what the UI already does by hiding the action: the duplication is the
- * point, because a UI regression must not be able to produce a write against production.
+ * The API offers no field projection, so a list response is projected to the row model here and
+ * the raw body is dropped immediately (see fields.ts for the measurements behind that). Every
+ * request carries its own timeout, and every write is refused unless the instance is explicitly
+ * marked writable. That last check duplicates what the UI already does by hiding the action:
+ * the duplication is the point, because a UI regression must not be able to produce a write
+ * against production.
  */
 
 import type { ArgoInstance } from "../config/instances";
@@ -17,7 +19,6 @@ import {
   ReadOnlyInstanceError,
   TimeoutError,
 } from "./errors";
-import { APPSET_FIELDS, DETAIL_FIELDS, LIST_FIELDS, STATUS_FIELDS } from "./fields";
 import { projectAppSet, type AppSetSummary } from "./appset";
 import { projectDetail, projectSummary } from "./project";
 import type { SyncRequest } from "./sync";
@@ -56,7 +57,7 @@ export class ArgoClient {
   }
 
   async listApplications(signal?: AbortSignal): Promise<ListResult> {
-    const body = await this.get("/api/v1/applications", { fields: LIST_FIELDS.join(",") }, signal);
+    const body = await this.get("/api/v1/applications", {}, signal);
     return {
       apps: this.projectItems(body, (item) => projectSummary(item, this.instance.id)),
       resourceVersion: readResourceVersion(body),
@@ -64,7 +65,7 @@ export class ArgoClient {
   }
 
   async listApplicationSets(signal?: AbortSignal): Promise<AppSetListResult> {
-    const body = await this.get("/api/v1/applicationsets", { fields: APPSET_FIELDS.join(",") }, signal);
+    const body = await this.get("/api/v1/applicationsets", {}, signal);
     return {
       appSets: this.projectItems(body, (item) => projectAppSet(item, this.instance.id)),
       resourceVersion: readResourceVersion(body),
@@ -77,7 +78,7 @@ export class ArgoClient {
     refresh?: "normal" | "hard",
     signal?: AbortSignal,
   ): Promise<AppDetail> {
-    const query: Record<string, string> = { appNamespace, fields: DETAIL_FIELDS.join(",") };
+    const query: Record<string, string> = { appNamespace };
     if (refresh) {
       query.refresh = refresh;
     }
@@ -85,7 +86,7 @@ export class ArgoClient {
   }
 
   async getApplicationStatus(name: string, appNamespace: string, signal?: AbortSignal): Promise<AppDetail> {
-    return this.readApplication(name, { appNamespace, fields: STATUS_FIELDS.join(",") }, signal);
+    return this.readApplication(name, { appNamespace }, signal);
   }
 
   async sync(name: string, appNamespace: string, body: SyncRequest, signal?: AbortSignal): Promise<void> {
@@ -143,10 +144,11 @@ export class ArgoClient {
     const timeout = AbortSignal.timeout(this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
 
+    // No Accept-Encoding here on purpose: Node's fetch negotiates gzip itself and decompresses
+    // the body. Setting the header by hand is how you end up holding a compressed buffer.
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
-      "Accept-Encoding": "gzip",
     };
     if (body !== undefined) {
       headers["Content-Type"] = "application/json";
@@ -161,8 +163,8 @@ export class ArgoClient {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     } catch (error) {
-      // The URL is deliberately absent from these messages: its query string carries the
-      // field projection and, on other endpoints, could carry more.
+      // The URL is deliberately absent from these messages: a query string can carry more than
+      // it looks like, and these strings end up in toasts and in Raycast's log.
       if (isAbort(error)) {
         throw new TimeoutError(`${this.instance.name} did not answer in time.`);
       }

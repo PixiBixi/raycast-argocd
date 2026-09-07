@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { APPSET_FIELDS, DETAIL_FIELDS, LIST_FIELDS, STATUS_FIELDS } from "../../../src/lib/argocd/fields";
+import {
+  MEASURED_LIST_APPLICATIONS,
+  MEASURED_LIST_GZIP_BYTES,
+  SUPPORTED_LIST_FILTERS,
+} from "../../../src/lib/argocd/fields";
 import { buildHaystack, projectDetail, projectSummary } from "../../../src/lib/argocd/project";
 
 const RAW_APP = {
@@ -212,23 +216,14 @@ describe("buildHaystack", () => {
   });
 });
 
-describe("field projections", () => {
-  it("asks for the identity, the status and the ApplicationSet owner", () => {
-    expect(LIST_FIELDS).toContain("items.metadata.name");
-    expect(LIST_FIELDS).toContain("items.metadata.ownerReferences");
-    expect(LIST_FIELDS).toContain("items.status.health.status");
-    expect(LIST_FIELDS).toContain("metadata.resourceVersion");
+describe("list filters", () => {
+  it("documents only the query parameters ApplicationQuery actually declares", () => {
+    expect([...SUPPORTED_LIST_FILTERS]).toEqual(["projects", "selector", "repo", "appNamespace"]);
+    expect([...SUPPORTED_LIST_FILTERS]).not.toContain("fields");
   });
 
-  it("never asks for manifests, secrets or the resource tree", () => {
-    for (const fields of [LIST_FIELDS, DETAIL_FIELDS, STATUS_FIELDS, APPSET_FIELDS]) {
-      for (const field of fields) {
-        expect(field).not.toMatch(/manifest|secret|password|token|resources\.liveState|tree/i);
-      }
-    }
-  });
-
-  it("keeps the polled status projection narrower than the detail projection", () => {
-    expect(STATUS_FIELDS.length).toBeLessThan(DETAIL_FIELDS.length);
+  it("keeps the measured list size on record, since it is what the read path is built around", () => {
+    expect(MEASURED_LIST_APPLICATIONS).toBeGreaterThan(2000);
+    expect(MEASURED_LIST_GZIP_BYTES).toBeLessThan(5 * 1024 * 1024);
   });
 });

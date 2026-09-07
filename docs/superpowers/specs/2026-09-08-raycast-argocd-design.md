@@ -65,15 +65,15 @@ number of entries, and hardcoding hostnames would leak internal topology into gi
 
 An instance is:
 
-| field        | type                          | notes |
-|--------------|-------------------------------|-------|
-| `id`         | string (uuid)                 | stable key for cache files and keychain entries |
-| `name`       | string                        | display name, e.g. `prod-tooling` |
-| `baseUrl`    | string                        | `https://argocd.example.com`, normalised (no trailing slash) |
-| `env`        | `prod` \| `preprod` \| `dev`  | drives the colour accent and the write guard default |
-| `authMode`   | `cli` \| `token`              | see 4.2 |
-| `allowWrite` | boolean, default `false`      | gates every non-GET call |
-| `enabled`    | boolean, default `true`       | excluded from "All instances" when false |
+| field        | type                         | notes                                                        |
+| ------------ | ---------------------------- | ------------------------------------------------------------ |
+| `id`         | string (uuid)                | stable key for cache files and keychain entries              |
+| `name`       | string                       | display name, e.g. `prod-tooling`                            |
+| `baseUrl`    | string                       | `https://argocd.example.com`, normalised (no trailing slash) |
+| `env`        | `prod` \| `preprod` \| `dev` | drives the colour accent and the write guard default         |
+| `authMode`   | `cli` \| `token`             | see 4.2                                                      |
+| `allowWrite` | boolean, default `false`     | gates every non-GET call                                     |
+| `enabled`    | boolean, default `true`      | excluded from "All instances" when false                     |
 
 Stored as JSON in Raycast `LocalStorage` under `instances/v1`. The `Manage Instances` command
 is the only writer. Validation (URL shape, https-only, unique id, unique name) lives in
@@ -110,49 +110,41 @@ extension free of native dependencies.
 
 ### 4.3 Read path and cache
 
-The whole design rests on one ArgoCD API detail: `GET /api/v1/applications` accepts a `fields`
-query parameter (a comma-separated list of dotted paths, `-`-prefixed to invert it into an
-exclusion list). It is undocumented in `swagger.json` but it is what the ArgoCD web UI itself
-uses for its applications list, on the same endpoint, in this exact version. Without it the
-response carries the full spec, status, resource list, operation state and sync history of
-every application: tens of megabytes.
+The ArgoCD API has no field projection. The web UI sends a `fields` query parameter on the
+applications list, which reads like one, and it is not: `ApplicationQuery` in the v3.5.1 proto
+declares exactly eight fields (`name`, `refresh`, `projects`, `resourceVersion`, `selector`,
+`repo`, `appNamespace`, `project`), `fields` is not among them, and the server's own
+`swagger.json` does not document it. The parameter is accepted and ignored. An earlier draft of
+this design was built on it; it was measured, found to do nothing, and removed. Sending a
+parameter that changes nothing would only mislead the next reader.
 
-The projection requested is:
+What the API does offer for narrowing a list is `projects`, `selector`, `repo` and
+`appNamespace`. None of them helps when the question is "every application on this instance".
 
-```
-items.metadata.name
-items.metadata.namespace
-items.metadata.resourceVersion
-items.metadata.ownerReferences
-items.spec.project
-items.spec.destination
-items.spec.source.repoURL
-items.spec.source.path
-items.spec.source.targetRevision
-items.spec.sources
-items.status.sync.status
-items.status.sync.revision
-items.status.health.status
-items.status.operationState.phase
-items.status.operationState.finishedAt
-metadata.resourceVersion
-```
+So the read path was measured instead, on a real instance holding 2053 applications:
 
-`ownerReferences` is what links an application back to the ApplicationSet that generated it
-(section 4.8). On the target instances 2034 of 2053 applications carry one, so it is the single
-most useful field beyond status.
+|                                                          |             |
+| -------------------------------------------------------- | ----------- |
+| compact JSON of the full list                            | 30.2 MB     |
+| the same list gzipped, which is what crosses the network | **2.97 MB** |
+| `JSON.parse` of the full list                            | 85 ms       |
+| peak heap while projecting                               | ~51 MB      |
+| the projection that gets cached                          | 289 kB      |
 
-That is roughly 320 bytes per application, so ~700 kB for 2200 applications before transport
-compression. The client sends `accept-encoding: gzip`.
+That settles the design. One full list per refresh is affordable; holding it is not, and
+re-deriving it on every keystroke would be absurd. So:
 
-**Degradation.** If a server ignores `fields` (older or patched build), the response is simply
-larger; the projection function reads the same paths either way, so the feature degrades in
-cost, not in correctness. No feature detection needed.
+- the response is projected to the row model as soon as it is parsed, and the raw body is
+  dropped (`lib/argocd/project.ts`);
+- the projection, two orders of magnitude smaller, is what gets cached to disk;
+- `Accept-Encoding` is deliberately **not** set by hand: Node's `fetch` negotiates gzip itself
+  and decompresses the body, and setting the header manually is how a caller ends up holding a
+  compressed buffer.
 
 **Cache.** Each instance gets `<supportPath>/cache/<instanceId>.json`:
 
 ```jsonc
-{ "schema": 1, "fetchedAt": 1757280000000, "resourceVersion": "…", "apps": [ /* projections */ ] }
+{ "schema": 1, "fetchedAt": 1757280000000, "resourceVersion": "…", "apps": [/* projections */] }
 ```
 
 Read synchronously on mount, so the list renders from disk with zero network latency. A
@@ -176,7 +168,7 @@ Rendering is the bottleneck, not filtering. 4000+ `List.Item` nodes will not be 
 
 - Raycast's built-in filtering is disabled (`filtering={false}`); the extension owns the query.
 - Each cached application carries a precomputed lowercase haystack (`name project namespace
-  destinationNamespace repoPath`) built once at load, so a keystroke never re-lowercases the
+destinationNamespace repoPath`) built once at load, so a keystroke never re-lowercases the
   corpus.
 - The scorer is a cheap two-tier match: exact/prefix/substring on the name (highest weight),
   then substring on the haystack. Ties break on instance order then name. No fuzzy
@@ -193,9 +185,10 @@ mode results are grouped in a `List.Section` per instance.
 ### 4.5 Application actions
 
 Selecting an application pushes a detail view fed by
-`GET /api/v1/applications/{name}?appNamespace=…&fields=…` (a wider projection than the list,
-including `status.conditions`, `status.summary`, `status.operationState.message`,
-`status.history[0]`).
+`GET /api/v1/applications/{name}?appNamespace=…`. One application is a few tens of kilobytes,
+so the detail view reads the whole object and projects the extra fields it needs on top of the
+row model: `status.conditions`, `status.summary.images`, `status.operationState.message`, and
+the most recent `status.history` entry.
 
 Actions, in order:
 
@@ -212,23 +205,24 @@ Actions, in order:
 `POST /api/v1/applications/{name}/sync` with a body assembled by
 `lib/argocd/sync.ts::buildSyncRequest`, a pure function over the form values:
 
-| form control              | request field |
-|---------------------------|---------------|
-| Revision (optional)       | `revision` |
-| Prune                     | `prune` |
-| Dry run                   | `dryRun` |
-| Apply only (no hooks)     | `strategy.apply` |
-| Force                     | `strategy.apply.force` / `strategy.hook.force` |
-| Replace                   | `syncOptions.items += "Replace=true"` |
-| Server-side apply         | `syncOptions.items += "ServerSideApply=true"` |
-| Prune last                | `syncOptions.items += "PruneLast=true"` |
-| Skip schema validation    | `syncOptions.items += "Validate=false"` |
-| Retry (limit, backoff)    | `retryStrategy` |
+| form control           | request field                                  |
+| ---------------------- | ---------------------------------------------- |
+| Revision (optional)    | `revision`                                     |
+| Prune                  | `prune`                                        |
+| Dry run                | `dryRun`                                       |
+| Apply only (no hooks)  | `strategy.apply`                               |
+| Force                  | `strategy.apply.force` / `strategy.hook.force` |
+| Replace                | `syncOptions.items += "Replace=true"`          |
+| Server-side apply      | `syncOptions.items += "ServerSideApply=true"`  |
+| Prune last             | `syncOptions.items += "PruneLast=true"`        |
+| Skip schema validation | `syncOptions.items += "Validate=false"`        |
+| Retry (limit, backoff) | `retryStrategy`                                |
 
 Defaults mirror the ArgoCD UI: everything off, no revision override, no retry. `strategy` is
 omitted when "apply only" is off so the server applies its own default (hook strategy).
 
 Guards, in order:
+
 1. `allowWrite` false on the instance: the action does not exist in the UI, and the client
    layer throws `ReadOnlyInstanceError` before building a request. Two independent checks, so
    a UI regression cannot produce a write.
@@ -238,10 +232,10 @@ Guards, in order:
 
 After submission the sync form pops and pushes the live status view.
 
-**Live status view.** Polls `GET /api/v1/applications/{name}?fields=<status projection>` every
-2 s while `status.operationState.phase` is `Running` or `Terminating`, then stops. Polling a
-single projected application is a few kilobytes; an SSE stream inside a Raycast view buys
-nothing here and fails less gracefully. The view shows phase, message, started/finished time,
+**Live status view.** Polls `GET /api/v1/applications/{name}?appNamespace=…` every 2 s while
+`status.operationState.phase` is `Running` or `Terminating`, then stops. One application is a
+few tens of kilobytes, so the poll is cheap; an SSE stream inside a Raycast view buys nothing
+here and fails less gracefully. The view shows phase, message, started/finished time,
 the sync result resource list with per-resource status, and the resulting health.
 
 ### 4.8 ApplicationSets
@@ -298,8 +292,11 @@ cannot be confused with an authorisation problem.
 ```ts
 type ReachabilityState = "reachable" | "unreachable" | "unknown";
 interface Reachability {
-  state: ReachabilityState; checkedAt: number;
-  latencyMs: number | undefined; version: string | undefined; reason: string | undefined;
+  state: ReachabilityState;
+  checkedAt: number;
+  latencyMs: number | undefined;
+  version: string | undefined;
+  reason: string | undefined;
 }
 ```
 
@@ -328,16 +325,16 @@ How it is used:
 
 Errors are typed in `lib/argocd/errors.ts` and each maps to one recoverable UI state:
 
-| error                   | trigger                    | UI |
-|-------------------------|----------------------------|----|
-| `AuthError`             | 401, or locally-expired JWT | "Log in with SSO" action |
-| `ForbiddenError`        | 403                        | "your account cannot do this on `<instance>`" |
-| `NotFoundError`         | 404                        | app removed; offer a refresh |
-| `TimeoutError`          | abort                      | falls back to cache, shows staleness |
-| `NetworkError`          | fetch reject               | falls back to cache, shows staleness |
-| `UnreachableError`      | probe says unreachable     | "check your VPN", cache still rendered |
-| `ReadOnlyInstanceError` | local guard                | should be unreachable; shown as a bug |
-| `ApiError`              | any other non-2xx          | status + server message |
+| error                   | trigger                     | UI                                            |
+| ----------------------- | --------------------------- | --------------------------------------------- |
+| `AuthError`             | 401, or locally-expired JWT | "Log in with SSO" action                      |
+| `ForbiddenError`        | 403                         | "your account cannot do this on `<instance>`" |
+| `NotFoundError`         | 404                         | app removed; offer a refresh                  |
+| `TimeoutError`          | abort                       | falls back to cache, shows staleness          |
+| `NetworkError`          | fetch reject                | falls back to cache, shows staleness          |
+| `UnreachableError`      | probe says unreachable      | "check your VPN", cache still rendered        |
+| `ReadOnlyInstanceError` | local guard                 | should be unreachable; shown as a bug         |
+| `ApiError`              | any other non-2xx           | status + server message                       |
 
 No error path logs a token, a URL with a query string, or a response body verbatim.
 
@@ -353,8 +350,9 @@ Covered:
 - `auth/cliConfig`: YAML parsing, host matching (with and without port, scheme-stripped),
   missing user entry, JWT `exp` decoding including malformed and unpadded base64url.
 - `auth/keychain`: argv construction for read/write/delete, injected `exec`, non-zero exit.
-- `argocd/client`: URL and `fields` assembly, `appNamespace` handling, gzip header, timeout via
-  injected `AbortController`, status-to-error mapping, read-only guard on writes.
+- `argocd/client`: URL assembly with no query parameter the API would ignore, `appNamespace`
+  handling, no hand-set `Accept-Encoding`, timeout via an injected abort signal,
+  status-to-error mapping, and the read-only guard refusing a write before `fetch` is reached.
 - `argocd/project`: projecting a raw application (full and already-projected) into the summary,
   tolerating absent `status`, multi-source applications.
 - `argocd/sync`: every checkbox combination that changes the body shape, and that an all-default
@@ -374,7 +372,10 @@ No fixture is derived from a real cluster.
 
 ## 6. Risks
 
-- **`fields` support**: undocumented in swagger. Mitigated by the degradation property in 4.3.
+- **List size growth**: the read path is sized on 2.97 MB gzipped for 2053 applications. It
+  scales linearly, so an instance an order of magnitude larger would need the `projects`
+  filter and per-project caching. The cache is already keyed per instance, so that change is
+  local to `useApplications`.
 - **`argocd` CLI dependency**: if absent or never logged in, the `cli` auth mode fails with a
   clear message and the `token` mode is the fallback. Both are surfaced in the onboarding empty
   state.

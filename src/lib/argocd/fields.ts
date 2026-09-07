@@ -1,77 +1,35 @@
 /**
- * Server-side field projections.
+ * What the ArgoCD API can and cannot narrow down, and the measurements behind the read path.
  *
- * GET /api/v1/applications accepts a `fields` query parameter: a comma-separated list of
- * dotted paths, optionally prefixed with "-" to turn it into an exclusion list. It is absent
- * from swagger.json but it is what the ArgoCD web UI sends on this same endpoint, and it is
- * the difference between a 66 MB response and a 700 kB one on an instance holding a couple of
- * thousand applications. Measured on a real instance: the unprojected list of 2053
- * applications is 66.7 MB.
+ * The ArgoCD web UI sends a `fields` query parameter on the applications list, which reads like
+ * a server-side projection. It is not one: `ApplicationQuery` in the v3.5.1 proto has exactly
+ * eight fields (name, refresh, projects, resourceVersion, selector, repo, appNamespace,
+ * project), `fields` is not among them, and the server's own swagger.json does not document it.
+ * The parameter is accepted and ignored, so sending it would only be misleading. Do not add it.
  *
- * If a server ever ignores the parameter, the response is merely larger; the projection
- * functions read the same paths either way, so the feature degrades in cost, not correctness.
+ * What the API does support for narrowing a list is here, and it is what this module exists to
+ * document:
+ *   - `projects`  restrict to one or more AppProjects
+ *   - `selector`  a label selector
+ *   - `repo`      restrict to one repository URL
+ *   - `appNamespace` restrict to one application namespace
+ *
+ * Measured on a real instance holding 2053 applications:
+ *   - compact JSON of the full list        30.2 MB
+ *   - the same list gzipped                 2.97 MB   (what actually crosses the network)
+ *   - JSON.parse of the full list             85 ms
+ *   - peak heap while projecting              ~51 MB
+ *   - the projection that gets cached        289 kB
+ *
+ * That is why the read path is what it is: one full list per refresh is affordable, holding it
+ * is not, and re-fetching it on every keystroke would be absurd. So the response is projected
+ * to the row model immediately (project.ts), the projection is what gets cached to disk
+ * (cache/store.ts), and the raw response is never retained.
  */
 
-export const LIST_FIELDS: readonly string[] = [
-  "items.metadata.name",
-  "items.metadata.namespace",
-  "items.metadata.resourceVersion",
-  // Links a generated application back to its ApplicationSet. On the target instance 2034 of
-  // 2053 applications carry one, which is what makes the ApplicationSet view free.
-  "items.metadata.ownerReferences",
-  "items.spec.project",
-  "items.spec.destination",
-  "items.spec.source.repoURL",
-  "items.spec.source.path",
-  "items.spec.source.targetRevision",
-  "items.spec.sources",
-  "items.status.sync.status",
-  "items.status.sync.revision",
-  "items.status.health.status",
-  "items.status.operationState.phase",
-  "items.status.operationState.finishedAt",
-  "metadata.resourceVersion",
-];
+/** Query parameters the applications list actually honours. */
+export const SUPPORTED_LIST_FILTERS = ["projects", "selector", "repo", "appNamespace"] as const;
 
-export const DETAIL_FIELDS: readonly string[] = [
-  "metadata.name",
-  "metadata.namespace",
-  "metadata.resourceVersion",
-  "metadata.ownerReferences",
-  "spec.project",
-  "spec.destination",
-  "spec.source",
-  "spec.sources",
-  "status.sync",
-  "status.health",
-  "status.conditions",
-  "status.summary",
-  "status.operationState.phase",
-  "status.operationState.message",
-  "status.operationState.startedAt",
-  "status.operationState.finishedAt",
-  "status.operationState.syncResult.resources",
-  "status.operationState.syncResult.revision",
-  "status.history",
-];
-
-/** The narrow projection polled while a sync runs. A few kilobytes per poll. */
-export const STATUS_FIELDS: readonly string[] = [
-  "metadata.name",
-  "metadata.namespace",
-  "status.sync.status",
-  "status.health.status",
-  "status.operationState.phase",
-  "status.operationState.message",
-  "status.operationState.startedAt",
-  "status.operationState.finishedAt",
-  "status.operationState.syncResult.resources",
-];
-
-export const APPSET_FIELDS: readonly string[] = [
-  "items.metadata.name",
-  "items.metadata.namespace",
-  "items.spec.template.spec.project",
-  "items.status.conditions",
-  "metadata.resourceVersion",
-];
+/** Measured compressed size of one full applications list, for the docs and the tests. */
+export const MEASURED_LIST_GZIP_BYTES = 2_972_621;
+export const MEASURED_LIST_APPLICATIONS = 2053;

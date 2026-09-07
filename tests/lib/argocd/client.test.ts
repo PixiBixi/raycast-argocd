@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { ArgoClient, type ClientDeps } from "../../../src/lib/argocd/client";
-import { LIST_FIELDS, DETAIL_FIELDS, STATUS_FIELDS, APPSET_FIELDS } from "../../../src/lib/argocd/fields";
 import {
   ApiError,
   ForbiddenError,
@@ -59,25 +58,26 @@ const APP_LIST = {
 };
 
 describe("listApplications", () => {
-  it("projects the list server-side and asks for nothing else", async () => {
+  it("asks for the plain list and adds no query parameter the API would ignore", async () => {
     const { calls, fetchStub } = recorder(() => json(APP_LIST));
     await new ArgoClient(instance(), deps(fetchStub)).listApplications();
 
     const url = calls[0]?.url;
     expect(url?.origin).toBe("https://argocd.example.com");
     expect(url?.pathname).toBe("/api/v1/applications");
-    expect(url?.searchParams.get("fields")).toBe(LIST_FIELDS.join(","));
-    expect([...(url?.searchParams.keys() ?? [])]).toEqual(["fields"]);
+    // ApplicationQuery has no `fields`: the ArgoCD UI sends one and the server ignores it.
+    expect([...(url?.searchParams.keys() ?? [])]).toEqual([]);
   });
 
-  it("authenticates with a bearer token and asks for a compressed JSON response", async () => {
+  it("authenticates with a bearer token and leaves content negotiation to Node", async () => {
     const { calls, fetchStub } = recorder(() => json(APP_LIST));
     await new ArgoClient(instance(), deps(fetchStub)).listApplications();
 
     const headers = calls[0]?.init.headers as Record<string, string>;
     expect(headers.Authorization).toBe(`Bearer ${SECRET}`);
     expect(headers.Accept).toBe("application/json");
-    expect(headers["Accept-Encoding"]).toBe("gzip");
+    // Setting Accept-Encoding by hand is how you end up holding a compressed buffer.
+    expect(Object.keys(headers).map((key) => key.toLowerCase())).not.toContain("accept-encoding");
   });
 
   it("returns the projected applications and the list resourceVersion", async () => {
@@ -106,7 +106,6 @@ describe("listApplicationSets", () => {
     const result = await new ArgoClient(instance(), deps(fetchStub)).listApplicationSets();
 
     expect(calls[0]?.url.pathname).toBe("/api/v1/applicationsets");
-    expect(calls[0]?.url.searchParams.get("fields")).toBe(APPSET_FIELDS.join(","));
     expect(result.appSets.map((set) => set.name)).toEqual(["team-a-set"]);
     expect(result.resourceVersion).toBe("7");
   });
@@ -121,7 +120,6 @@ describe("getApplication", () => {
 
     expect(calls[0]?.url.pathname).toBe("/api/v1/applications/app-one");
     expect(calls[0]?.url.searchParams.get("appNamespace")).toBe("team-a-apps");
-    expect(calls[0]?.url.searchParams.get("fields")).toBe(DETAIL_FIELDS.join(","));
     expect(calls[0]?.url.searchParams.get("refresh")).toBeNull();
   });
 
@@ -132,10 +130,11 @@ describe("getApplication", () => {
     expect(calls[0]?.url.searchParams.get("refresh")).toBe("hard");
   });
 
-  it("uses the narrow projection when polling a running sync", async () => {
+  it("polls a single application while a sync runs, scoped to its namespace", async () => {
     const { calls, fetchStub } = recorder(() => json(APP));
     await new ArgoClient(instance(), deps(fetchStub)).getApplicationStatus("app-one", "team-a-apps");
-    expect(calls[0]?.url.searchParams.get("fields")).toBe(STATUS_FIELDS.join(","));
+    expect(calls[0]?.url.pathname).toBe("/api/v1/applications/app-one");
+    expect(calls[0]?.url.searchParams.get("appNamespace")).toBe("team-a-apps");
   });
 
   it("escapes an application name that would otherwise change the path", async () => {
@@ -208,7 +207,7 @@ describe("error mapping", () => {
     const { fetchStub } = recorder(() => json({ message: "nope" }, 500));
     await new ArgoClient(instance(), deps(fetchStub)).listApplications().catch((error: Error) => {
       expect(error.message).not.toContain(SECRET);
-      expect(error.message).not.toContain("fields=");
+      expect(error.message).not.toContain("appNamespace=");
     });
     expect.assertions(2);
   });
