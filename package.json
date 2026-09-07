@@ -1,0 +1,106 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "argocd",
+  "title": "ArgoCD",
+  "description": "Search applications across several ArgoCD instances, then open, inspect or sync them.",
+  "icon": "argocd.png",
+  "author": "pixibixi",
+  "license": "MIT",
+  "platforms": [
+    "macOS"
+  ],
+  "categories": [
+    "Developer Tools"
+  ],
+  "keywords": [
+    "argocd",
+    "gitops",
+    "kubernetes",
+    "deployment",
+    "sync"
+  ],
+  "commands": [
+    {
+      "name": "search-applications",
+      "title": "Search Applications",
+      "subtitle": "ArgoCD",
+      "description": "Search ArgoCD applications across every configured instance.",
+      "mode": "view",
+      "keywords": [
+        "app",
+        "argo",
+        "gitops"
+      ]
+    },
+    {
+      "name": "manage-instances",
+      "title": "Manage Instances",
+      "subtitle": "ArgoCD",
+      "description": "Add, edit and remove the ArgoCD instances the extension queries.",
+      "mode": "view",
+      "keywords": [
+        "server",
+        "cluster",
+        "config"
+      ]
+    }
+  ],
+  "preferences": [
+    {
+      "name": "cacheTtlSeconds",
+      "title": "Cache TTL",
+      "description": "Seconds before a cached application list is refreshed in the background. Clamped to 5-3600.",
+      "type": "textfield",
+      "required": false,
+      "default": "60"
+    },
+    {
+      "name": "requestTimeoutSeconds",
+      "title": "Request Timeout",
+      "description": "Seconds before an ArgoCD API request is aborted. Clamped to 3-120.",
+      "type": "textfield",
+      "required": false,
+      "default": "15"
+    },
+    {
+      "name": "maxResults",
+      "title": "Max Results",
+      "description": "Maximum number of applications rendered at once. Clamped to 10-200.",
+      "type": "textfield",
+      "required": false,
+      "default": "60"
+    },
+    {
+      "name": "argocdCliPath",
+      "title": "argocd CLI Path",
+      "description": "Path to the argocd binary used for the SSO login action.",
+      "type": "textfield",
+      "required": false,
+      "default": "argocd"
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^2.2.0",
+    "@raycast/utils": "^2.3.1",
+    "yaml": "^2.9.0"
+  },
+  "scripts": {
+    "build": "ray build",
+    "dev": "ray develop",
+    "lint": "ray lint",
+    "fix-lint": "ray lint --fix",
+    "publish": "npx @raycast/api@latest publish",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^2.2.0",
+    "@types/node": "^22.19.17",
+    "@types/react": "^19.0.10",
+    "eslint": "^10.10.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0"
+  }
+}
