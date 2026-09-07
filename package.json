@@ -63,6 +63,14 @@
       "default": "15"
     },
     {
+      "name": "probeTimeoutSeconds",
+      "title": "Reachability Probe Timeout",
+      "description": "Seconds before an instance is considered unreachable. Kept short so a VPN that is down is reported immediately. Clamped to 1-30.",
+      "type": "textfield",
+      "required": false,
+      "default": "4"
+    },
+    {
       "name": "maxResults",
       "title": "Max Results",
       "description": "Maximum number of applications rendered at once. Clamped to 10-200.",
