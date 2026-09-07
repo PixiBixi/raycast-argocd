@@ -33,6 +33,18 @@
       ]
     },
     {
+      "name": "search-applicationsets",
+      "title": "Search ApplicationSets",
+      "subtitle": "ArgoCD",
+      "description": "Search ApplicationSets and jump to the applications they generated.",
+      "mode": "view",
+      "keywords": [
+        "appset",
+        "applicationset",
+        "generator"
+      ]
+    },
+    {
       "name": "manage-instances",
       "title": "Manage Instances",
       "subtitle": "ArgoCD",
