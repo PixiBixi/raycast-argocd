@@ -376,9 +376,16 @@ No fixture is derived from a real cluster.
   scales linearly, so an instance an order of magnitude larger would need the `projects`
   filter and per-project caching. The cache is already keyed per instance, so that change is
   local to `useApplications`.
+- **The CLI loopback redirect may not be registered.** Verified against the real identity
+  provider: `argocd login <host> --sso` serves its callback on
+  `http://localhost:8085/auth/callback`, and the OIDC client ArgoCD is configured with does not
+  list that URI, so the provider refuses the request outright with "the redirect_uri parameter
+  must be a Login redirect URI in the client app settings". The `cli` mode is therefore
+  unusable until either that URI is added to the client, or `oidc.cliClientID` in `argocd-cm`
+  points at a client that has it. This is why the `token` mode is a first-class path and not a
+  fallback: it needs nothing from the identity provider. The README leads with the check.
 - **`argocd` CLI dependency**: if absent or never logged in, the `cli` auth mode fails with a
-  clear message and the `token` mode is the fallback. Both are surfaced in the onboarding empty
-  state.
+  clear message naming the login command.
 - **Okta token lifetime** (60 min): re-login is a two-keystroke action, not a reconfiguration.
 - **Raycast `LocalStorage` is not encrypted**: hence no token in it, keychain only.
 - **The probe endpoint is unauthenticated**: it is used only to decide whether to attempt a

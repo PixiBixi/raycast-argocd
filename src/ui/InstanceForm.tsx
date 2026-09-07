@@ -107,7 +107,7 @@ export function InstanceForm({ instances, editing, onSaved }: Props) {
         title="Authentication"
         value={authMode}
         onChange={(value) => setAuthMode(value as AuthMode)}
-        info="argocd CLI session reuses the token that `argocd login <host> --sso` already stored. API token reads a token you store in the macOS keychain."
+        info="CLI session reuses the token that argocd login <host> --sso already stored, and needs your identity provider to accept the CLI loopback redirect http://localhost:8085/auth/callback. API token reads a token from the macOS keychain and needs nothing from the identity provider. See the README."
       >
         <Form.Dropdown.Item value="cli" title="argocd CLI session (SSO)" icon={Icon.Person} />
         <Form.Dropdown.Item value="token" title="API token in the keychain" icon={Icon.Key} />

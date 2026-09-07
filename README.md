@@ -42,45 +42,68 @@ committed to this repository.
 
 ## Authentication
 
-### argocd CLI session, the default
+Two modes, neither of which asks you to trust this extension with a password. Which one you can
+use depends on one thing: whether your identity provider accepts the `argocd` CLI's loopback
+redirect.
 
-The official CLI already implements the OIDC PKCE loopback flow and stores the resulting bearer
-token in `~/.config/argocd/config` (mode 0600). The extension reads that file, matches the
-`users[]` entry against the instance host, and uses the token. Nothing new is registered with
-your identity provider, no client secret lives in the extension, and no credential is written by
-it.
+### Check that first
 
-Log in once per instance:
+`argocd login <host> --sso` serves its OIDC callback on `http://localhost:8085/auth/callback`.
+That URI has to be registered as a login redirect URI on the OIDC client ArgoCD is configured
+with (`oidc.config.clientID` in `argocd-cm`, or `oidc.cliClientID` if it is set). Many
+deployments only register the web UI's own callback, in which case the CLI login fails at the
+identity provider with `The 'redirect_uri' parameter must be a Login redirect URI in the client
+app settings`.
+
+Test it in ten seconds:
 
 ```sh
 argocd login argocd.example.com --sso --grpc-web
 ```
 
-Verify it worked:
+If the browser shows that error, you have two ways forward: ask whoever administers the OIDC
+client to add `http://localhost:8085/auth/callback` to its login redirect URIs, or set
+`oidc.cliClientID` in `argocd-cm` to a client that already has it. Until then, use the API token
+mode.
+
+### argocd CLI session
+
+The best mode when the loopback redirect is registered, because the token lifecycle stays owned
+by the tool that already owns it. The CLI runs the OIDC PKCE flow and stores the bearer token in
+`~/.config/argocd/config` (mode 0600). The extension reads that file, matches the `users[]` entry
+against the instance host, and uses the token. Nothing new is registered with your identity
+provider, no client secret lives in the extension, and no credential is written by it.
+
+Verify a session exists for the host itself:
 
 ```sh
 argocd account get-user-info --server argocd.example.com --grpc-web
 ```
 
-When the token expires, the extension offers a **Log in with SSO** action that runs that command
-for you and waits for the new token.
+A config that only lists `kubernetes` (left by `argocd --core`) or `localhost:8080` (left by a
+port-forward) has no session for the host, and the extension will say so.
 
-If your identity provider rejects the CLI's loopback redirect
-(`http://localhost:8085/auth/callback`), either register that redirect URI on the OIDC client,
-set `oidc.cliClientID` in `argocd-cm` to a client that has it, or use the API token mode below.
+When the token expires, typically after an hour, the extension offers a **Log in with SSO**
+action that re-runs the login and waits for the new token.
 
 ### API token in the keychain
 
-For instances where a token is preferred, or where the SSO loopback is not available.
+The mode that needs nothing from your identity provider.
 
 ```sh
 argocd account generate-token --account <account-name> --server argocd.example.com --grpc-web
 ```
 
+That command needs a session of its own, so if the CLI login is what is blocked, generate the
+token from the ArgoCD web UI instead: log in through your identity provider, then Settings,
+Accounts, pick an account that has the `apiKey` capability and generate a token. As a stopgap,
+the `argocd.token` cookie of a logged-in web session is itself a valid bearer token, with that
+session's lifetime.
+
 Set the instance's authentication mode to `API token in the keychain`, then use **Set API
 token**. The token goes into the macOS keychain under the service `raycast-argocd`, keyed by the
-instance id. It is never written to Raycast's storage, which is not encrypted, and never appears
-in a command line, a log or the clipboard.
+instance id. It is never written to Raycast's storage, which is not encrypted, never passed on a
+command line where `ps` would show it, and never logged or copied to the clipboard.
 
 Inspect or remove it yourself with:
 
