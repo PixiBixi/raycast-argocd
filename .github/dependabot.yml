@@ -6,8 +6,6 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
-      # @raycast/api pins its own @types/node and @types/react, so they only ever
-      # move together. One PR, one CI run.
       raycast:
         patterns: ["@raycast/*", "@types/node", "@types/react"]
       dev-tooling:
@@ -18,6 +16,12 @@ updates:
       # Revisit when @raycast/eslint-config widens the range.
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
+      # @raycast/api peer-depends on exact versions of these two, and the runtime is
+      # Raycast's own Node 22.22.2. They must move when @raycast/api moves, never on
+      # their own: a bump to @types/node 26 typechecks against a runtime that is not
+      # there. Do NOT remove without checking @raycast/api's peerDependencies.
+      - dependency-name: "@types/node"
+      - dependency-name: "@types/react"
   - package-ecosystem: github-actions
     directory: /
     schedule:
