@@ -253,12 +253,28 @@ to answer the question: the answer is already in the applications cache.
 `AppSummary` therefore carries `appSetName: string | undefined`, projected from that owner
 reference.
 
-A third command, **Search ApplicationSets**, lists ApplicationSets from
-`GET /api/v1/applicationsets` with the same field-projection and caching treatment as
-applications. Fetching them rather than deriving the list from the applications cache costs one
-small request per instance and buys two things the cache cannot give: ApplicationSets that
-currently generate nothing, and `status.conditions`, which is where a broken generator reports
-itself.
+A third command, **Search ApplicationSets**, merges two sources, because measurement showed
+neither is sufficient.
+
+`GET /api/v1/applicationsets` is the better source when it works: only it carries
+`status.conditions`, so only it can report a broken generator, and only it knows about an
+ApplicationSet that has generated nothing. But it returns only ApplicationSets whose namespace
+the server has enabled **for ApplicationSets**, a switch separate from the one enabling
+applications in any namespace, and it filters silently rather than erroring. On the target
+instance it answers 200 with an empty list while 872 ApplicationSets exist. There is no error
+to surface and nothing a client can do about it.
+
+So the applications cache is the second source, and this is where the `(namespace, ownerName)`
+property pays off again: the parents can be reconstructed from applications already on disk,
+with no extra request and no extra permission. Measured on the real corpus: **807 of the 872
+ApplicationSets recovered from 2053 applications**, the missing ones being those that generate
+nothing. A reconstructed entry is marked as such in the row and counted in the section
+subtitle, and the API's answer wins wherever it has one, so the list never claims to know more
+than it does.
+
+The consequence is a real coupling worth stating: `Search Applications` must have run once for
+`Search ApplicationSets` to be useful, because the reconstruction reads that cache. The empty
+state says so rather than showing "no ApplicationSet found".
 
 Each row shows the ApplicationSet name, its project, and a rollup of the applications it owns
 computed locally from the applications cache: total, out-of-sync count, degraded count. The
@@ -285,9 +301,16 @@ The instances sit behind a VPN. Off it, every request hangs until its timeout, w
 failure: the operator does not have a broken instance, they have a disconnected laptop, and the
 extension should say so in under a second.
 
-`GET {baseUrl}/api/v1/version` answers 200 without authentication on ArgoCD 3.x, which makes it
-the right probe: it proves the network path and the server, it costs one small response, and it
+`GET {baseUrl}/api/version` answers 200 without authentication on ArgoCD 3.x, which makes it the
+right probe: it proves the network path and the server, it costs one small response, and it
 cannot be confused with an authorisation problem.
+
+The path has no `/v1`: ArgoCD serves the version outside the versioned API, and
+`/api/v1/version` is a 404. This was got wrong in the first implementation, and the failure mode
+is instructive: because any HTTP answer counts as reachable, a 404 rendered as a green dot with
+a latency and no version, which reads as healthy. So a reachable probe now carries its non-2xx
+status in `reason`, the UI always shows it, and the dot turns amber whenever the answer was not
+a 2xx or carried no version. A probe that cannot fail loudly is not a probe.
 
 ```ts
 type ReachabilityState = "reachable" | "unreachable" | "unknown";
@@ -390,6 +413,9 @@ No fixture is derived from a real cluster.
 - **Raycast `LocalStorage` is not encrypted**: hence no token in it, keychain only.
 - **The probe endpoint is unauthenticated**: it is used only to decide whether to attempt a
   request. Nothing in the UI treats a successful probe as an authorisation.
-- **ApplicationSets in a namespace the user cannot list**: the applications list is the source
-  of truth for the rollup, so an ApplicationSet the user cannot see simply does not appear;
-  its applications, if visible, still show their parent name in the detail view.
+- **ApplicationSets the API will not return**: confirmed on the target instance, and mitigated
+  by reconstructing them from the applications cache (4.8). What stays lost is the
+  ApplicationSets that generate nothing and every `status.conditions`, so a broken generator
+  producing no application is invisible. Fixing that properly needs
+  `applicationsetcontroller.namespaces` and the matching argocd-server setting, which is a
+  server change.

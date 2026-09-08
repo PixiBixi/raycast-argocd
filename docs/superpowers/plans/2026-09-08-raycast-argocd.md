@@ -1194,3 +1194,46 @@ Changes applied:
   buffer.
 - The client tests now assert the _absence_ of a query parameter on the list, and the absence of
   a hand-set `Accept-Encoding` header, so the parameter cannot come back unnoticed.
+
+### A5: two bugs found in use (corrections to Task 18 and Task 17)
+
+Both surfaced the first time the extension ran against the real instances.
+
+**The reachability probe used the wrong path.** `/api/v1/version` is a 404; ArgoCD serves the
+version at `/api/version`, outside the versioned API. The bug was mine, transcribed from a
+successful manual test into the wrong path.
+
+What made it worth more than a one-character fix is the failure mode: because any HTTP answer
+counts as reachable by design, the 404 rendered as a **green dot with a latency and no
+version**, which reads as healthy. A probe that cannot fail loudly is not a probe. So:
+
+- `probe.ts` exports `VERSION_PATH = "/api/version"`, and the test asserts the exact path and
+  that it contains no `/v1/`, because getting it wrong is silent by construction.
+- a reachable probe keeps its non-2xx status in `reason`, and `reachabilityText` always appends
+  it.
+- `isProbeSuspicious` turns the dot amber when the answer was not a 2xx or carried no version,
+  so "answered, but not by an ArgoCD" never renders as green again.
+
+**`GET /api/v1/applicationsets` returns an empty list on the target instance.** 200, no error,
+zero items, while 872 ApplicationSets exist. The endpoint only returns ApplicationSets whose
+namespace the server has enabled for ApplicationSets, which is a switch separate from the one
+enabling applications in any namespace, and it filters silently. Nothing client-side fixes that.
+
+So the command now merges two sources:
+
+- `appset.ts` gains `deriveAppSets(apps)`, `appSetKey(appSet)` and
+  `mergeAppSets(fromApi, derived)`. `AppSetSummary` gains `derived: boolean`. Derivation uses
+  the same `(instanceId, namespace, ownerName)` key the rollup already relies on.
+- `useAppSets` reads the applications cache first and renders the derived entries before any
+  ApplicationSet request is made, then merges the API's answer over them, preferring the API.
+  `AppSetInstanceState` gains `fromApi`. On an error the derived entries stay on screen.
+- the row shows a link icon for a derived entry, the section subtitle counts them, and the
+  empty state distinguishes "no instance", "no applications cached yet" (with the fix: open
+  Search Applications once), "nothing matches the query" and "neither source reported one".
+- `tests/lib/argocd/appset.test.ts` covers derivation and merge, including the real case of an
+  API returning nothing. `tests/lib/real-instance.test.ts` asserts derivation produces something
+  on a real corpus: 807 of 872 recovered.
+
+**Also fixed:** `tests/lib/real-instance.test.ts` read its fixture at collection time, and
+`describe.runIf` still evaluates the suite body, so the file threw whenever `REAL_APPS_JSON` was
+unset. The read is now lazy, inside each test.

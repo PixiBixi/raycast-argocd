@@ -115,15 +115,54 @@ security delete-generic-password -s raycast-argocd -a <instance-id>
 ## Reachability
 
 Instances behind a VPN would otherwise make every command wait out its full request timeout
-before failing. Each instance is probed first with an unauthenticated
-`GET /api/v1/version` and a short timeout, so a disconnected VPN is reported in under a second
-and the list still renders from cache. An instance that comes back unreachable is not queried at
-all.
+before failing. Each instance is probed first with an unauthenticated `GET /api/version` and a
+short timeout, so a disconnected VPN is reported in under a second and the list still renders
+from cache. An instance that comes back unreachable is not queried at all.
 
-**Manage Instances** shows the state per row: green with the server version and round-trip time,
-red with `unreachable, check your VPN`, or grey before the first probe. `⌘T` re-probes
-everything. The result is cached for 30 seconds, so a VPN that just came up is picked up on the
-next open.
+Note the path: ArgoCD serves its version outside the versioned API, so `/api/version` and not
+`/api/v1/version`. Any HTTP answer counts as reachable, including a 404, so a wrong path reads
+as "reachable" and is easy to miss.
+
+**Manage Instances** shows the state per row:
+
+| Dot   | Means                                                                                                                      |
+| ----- | -------------------------------------------------------------------------------------------------------------------------- |
+| green | answered 2xx, with the server version and the round-trip time                                                              |
+| amber | answered, but not 2xx or without a version. A wrong URL, a proxy in the way, or a broken server. The status is in the row. |
+| red   | nothing answered. `unreachable, check your VPN`.                                                                           |
+| grey  | not probed yet                                                                                                             |
+
+`⌘T` re-probes everything. The result is cached for 30 seconds, so a VPN that just came up is
+picked up on the next open.
+
+## ApplicationSets
+
+`Search ApplicationSets` merges two sources, because neither is enough on its own.
+
+`GET /api/v1/applicationsets` is the better one when it works: only it carries
+`status.conditions`, so only it can report a broken generator, and only it knows about an
+ApplicationSet that has generated nothing. But it returns only ApplicationSets whose namespace
+the server has enabled **for ApplicationSets**, which is a switch separate from the one that
+enables applications in any namespace, and it filters silently. On a server where that switch is
+off, the endpoint answers 200 with an empty list while thousands of ApplicationSets exist, and
+there is no error to report.
+
+So the applications cache is the second source. Every generated application carries an
+ownerReference naming its parent, and owner references are namespace-scoped, so the parents can
+be reconstructed with no extra request and no extra permission. Measured on a real instance:
+807 of the 872 ApplicationSets recovered from 2053 applications, the missing ones being those
+that currently generate nothing.
+
+A reconstructed entry carries a link icon and its section says how many were reconstructed, so
+the list never pretends to know more than it does. The API's answer wins wherever it has one.
+
+This means **`Search Applications` has to have run once** for `Search ApplicationSets` to be
+useful: the reconstruction reads that cache. The empty state says so.
+
+To get the full list from the API instead, the ApplicationSet namespaces have to be enabled on
+the server side, through `applicationsetcontroller.namespaces` in `argocd-cmd-params-cm` and the
+matching argocd-server setting. That is a server change, not something this extension can work
+around.
 
 ## Preferences
 
@@ -193,6 +232,15 @@ hour. Use **Log in with SSO** from the empty state or from Manage Instances.
 **"unreachable, check your VPN"** - the probe got no answer at all. Connect the VPN and press
 `⌘T` in Manage Instances, or `⌘⇧R` in the search command. Any HTTP answer, including a 4xx,
 counts as reachable, so this really does mean nothing answered.
+
+**An amber dot with a latency and a status** - the instance answered something other than 2xx on
+`/api/version`. Usually the server URL points at something that is not an ArgoCD, or a proxy is
+answering instead of it. Check the URL in Manage Instances.
+
+**Search ApplicationSets is empty, or every entry has a link icon** - the ApplicationSet API
+returned nothing, either because the server has not enabled those namespaces for
+ApplicationSets or because your account cannot list them. See the ApplicationSets section. If it
+is empty altogether, open Search Applications once so the reconstruction has a cache to read.
 
 **A section says "cached 12 min ago, refresh failed"** - the refresh failed and the cached list
 is still being shown on purpose. The reason is in the section subtitle, and `⌘R` retries that
