@@ -13,7 +13,7 @@ the usage reference.
 | Search Applications    | view             | Every instance at once, or one. Paints from cache, refreshes behind you.  |
 | Search ApplicationSets | view             | ApplicationSets with a rollup of what each generated, and a jump to them. |
 | Manage Instances       | view             | Add and edit instances, see reachability, handle logins and tokens.       |
-| ArgoCD Monitor         | menu bar, 10 min | Counts what is degraded or out of sync. Also keeps the cache warm.        |
+| Monitor                | menu bar, 10 min | Counts what is degraded or out of sync. Also keeps the cache warm.        |
 
 ## 🚀 Install
 
@@ -126,7 +126,7 @@ back before success is reported. **Clear API token** removes it.
 
 A value that does not parse falls back to the default; out of range is clamped.
 
-`ArgoCD Monitor` adds **When everything is healthy**, off by default, so the menu bar stays
+`Monitor` adds **When everything is healthy**, off by default, so the menu bar stays
 quiet until something needs attention.
 
 ## ⌨️ Application actions
@@ -173,7 +173,7 @@ of the UI. See
 
 ## 📊 Menu bar
 
-Run **ArgoCD Monitor** once and the icon installs itself next to the clock. Nothing happens
+Run **Monitor** once and the icon installs itself next to the clock. Nothing happens
 inside Raycast, which is expected. If it does not appear, a full macOS menu bar is usually
 dropping it silently.
 

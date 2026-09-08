@@ -70,7 +70,7 @@ degraded. Selecting one pushes
 [`AppSetApplications`](../../src/ui/AppSetApplications.tsx), a pure client-side filter over the
 same cache, so it opens instantly and never costs a second round trip.
 
-## ArgoCD Monitor
+## Monitor
 
 [`src/monitor.tsx`](../../src/monitor.tsx), `mode: menu-bar`, `interval: 10m`.
 

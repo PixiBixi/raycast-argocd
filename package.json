@@ -58,7 +58,7 @@
     },
     {
       "name": "monitor",
-      "title": "ArgoCD Monitor",
+      "title": "Monitor",
       "subtitle": "ArgoCD",
       "description": "Menu bar counter of the degraded and out-of-sync applications across every instance. Also keeps the local cache warm, so the search command stays instant.",
       "mode": "menu-bar",

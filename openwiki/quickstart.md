@@ -49,7 +49,7 @@ second reason is enforced, not merely intended, by
 | Search Applications    | view          | Searches every configured instance at once, or one of them.              |
 | Search ApplicationSets | view          | Lists ApplicationSets with a rollup of the applications each generated.  |
 | Manage Instances       | view          | Adds and edits instances, shows reachability, handles logins and tokens. |
-| ArgoCD Monitor         | menu-bar, 10m | Counts what is degraded or out of sync, and keeps the cache warm.        |
+| Monitor                | menu-bar, 10m | Counts what is degraded or out of sync, and keeps the cache warm.        |
 
 Declared in [`package.json`](../package.json); each `name` maps to `src/<name>.tsx`.
 
