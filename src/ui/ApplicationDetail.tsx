@@ -34,15 +34,13 @@ interface Props {
   onRefresh: (instanceId?: string) => void;
 }
 
-function shortRevision(revision: string | undefined): string | undefined {
-  if (!revision) {
-    return undefined;
-  }
-  return /^[0-9a-f]{40}$/i.test(revision) ? revision.slice(0, 7) : revision;
-}
-
-function resourceRow(resource: ResourceStatus): string {
-  const flags = [
+/**
+ * Markdown tables are the wrong primitive here. The detail pane is a few hundred pixels wide
+ * and Raycast wraps a table cell by breaking the word, so a "Status" header renders one letter
+ * per line. Everything below is one fact per line instead.
+ */
+function resourceLine(resource: ResourceStatus): string {
+  const state = [
     resource.status === "" ? "not compared" : resource.status,
     resource.health,
     resource.requiresPruning ? "**needs pruning**" : undefined,
@@ -50,8 +48,17 @@ function resourceRow(resource: ResourceStatus): string {
   ]
     .filter(Boolean)
     .join(", ");
-  const identity = [resource.namespace, resource.name].filter(Boolean).join("/");
-  return `| ${resource.kind || "?"} | ${identity} | ${flags} |`;
+  const identity = resource.namespace
+    ? `\`${resource.name}\` in \`${resource.namespace}\``
+    : `\`${resource.name}\``;
+  return `- **${resource.kind || "?"}** ${identity}: ${state}`;
+}
+
+function shortRevision(revision: string | undefined): string | undefined {
+  if (!revision) {
+    return undefined;
+  }
+  return /^[0-9a-f]{40}$/i.test(revision) ? revision.slice(0, 7) : revision;
 }
 
 /**
@@ -76,38 +83,40 @@ function markdown(
 
   const attention = (detail?.resources ?? []).filter(resourceNeedsAttention);
   if (attention.length > 0) {
-    const shown = orderResources(attention).slice(0, 20);
+    const shown = orderResources(attention).slice(0, 15);
     lines.push(
       "",
       `## ${attention.length} resource${attention.length === 1 ? "" : "s"} need attention`,
       "",
-      "| Kind | Resource | State |",
-      "| --- | --- | --- |",
-      ...shown.map(resourceRow),
+      ...shown.map(resourceLine),
     );
     if (attention.length > shown.length) {
       lines.push("", `_and ${attention.length - shown.length} more, in the resources view_`);
     }
   } else if (detail && detail.resourceCounts.total > 0) {
-    lines.push("", `## Resources`, "", `All ${detail.resourceCounts.total} managed resources are in order.`);
+    lines.push("", "## Resources", "", `All ${detail.resourceCounts.total} managed resources are in order.`);
   }
 
-  if (revision?.message) {
-    lines.push(
-      "",
-      "## Deployed commit",
-      "",
-      `**${shortRevision(detail?.revision ?? app.revision) ?? "unknown"}**${revision.author ? ` by ${revision.author}` : ""}${revision.date ? ` on ${revision.date}` : ""}`,
-      "",
-      `> ${revision.message.split("\n")[0]}`,
-    );
+  if (revision?.message || revision?.author) {
+    const deployed = shortRevision(detail?.revision ?? app.revision) ?? "unknown";
+    lines.push("", "## Deployed commit", "", `- \`${deployed}\``);
+    if (revision.author) {
+      lines.push(`- by ${revision.author}`);
+    }
+    if (revision.date) {
+      lines.push(`- on ${revision.date}`);
+    }
+    if (revision.message) {
+      lines.push("", `> ${revision.message.split("\n")[0]}`);
+    }
   }
 
   if (detail && detail.history.length > 0) {
-    lines.push("", "## Recent deployments", "", "| Revision | Deployed | By |", "| --- | --- | --- |");
+    lines.push("", "## Recent deployments", "");
     for (const entry of detail.history) {
+      const by = entry.initiatedBy ? ` by ${entry.initiatedBy}` : "";
       lines.push(
-        `| ${shortRevision(entry.revision) ?? "?"} | ${entry.deployedAt ?? "?"} | ${entry.initiatedBy ?? "unknown"} |`,
+        `- \`${shortRevision(entry.revision) ?? "?"}\` on ${entry.deployedAt ?? "an unknown date"}${by}`,
       );
     }
   }
@@ -120,21 +129,18 @@ function markdown(
     }
   }
 
-  if (detail && detail.syncResources.length > 0) {
-    const failed = detail.syncResources.filter((resource) => resource.message.length > 0);
-    if (failed.length > 0) {
+  // Only the failures. A "serverside-applied" message on a Synced resource is the sync working
+  // as intended, and listing those buried the ones that matter.
+  const failures = (detail?.syncResources ?? []).filter(
+    (resource) =>
+      resource.status === "SyncFailed" || resource.hookPhase === "Failed" || resource.hookPhase === "Error",
+  );
+  if (failures.length > 0) {
+    lines.push("", "## Last sync failures", "");
+    for (const resource of failures.slice(0, 15)) {
       lines.push(
-        "",
-        "## Last sync messages",
-        "",
-        "| Kind | Name | Status | Message |",
-        "| --- | --- | --- | --- |",
+        `- **${resource.kind || "?"}** \`${resource.name}\`: ${resource.message || resource.status}`,
       );
-      for (const resource of failed.slice(0, 20)) {
-        lines.push(
-          `| ${resource.kind || "?"} | ${resource.name} | ${resource.status || "?"} | ${resource.message} |`,
-        );
-      }
     }
   }
 
