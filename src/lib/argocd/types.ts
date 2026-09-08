@@ -45,6 +45,66 @@ export interface AppCondition {
   message: string;
 }
 
+/**
+ * One entry of `status.resources`: what ArgoCD believes about each object the application
+ * manages. It comes inside the application object, so the whole resource inventory costs no
+ * extra request, which is why the detail view leads with it.
+ */
+export interface ResourceStatus {
+  group: string;
+  version: string;
+  kind: string;
+  namespace: string;
+  name: string;
+  /** "Synced", "OutOfSync", or empty when ArgoCD has not compared it yet. */
+  status: SyncStatus | "";
+  health: HealthStatus | undefined;
+  hook: boolean;
+  requiresPruning: boolean;
+  syncWave: number | undefined;
+}
+
+export interface ResourceCounts {
+  total: number;
+  outOfSync: number;
+  degraded: number;
+  needsPruning: number;
+}
+
+/** `spec.syncPolicy`, flattened. Whether auto-sync is on changes what a manual sync means. */
+export interface SyncPolicy {
+  automated: boolean;
+  prune: boolean;
+  selfHeal: boolean;
+  allowEmpty: boolean;
+  syncOptions: string[];
+}
+
+export interface HistoryEntry {
+  revision: string | undefined;
+  deployedAt: string | undefined;
+  deployStartedAt: string | undefined;
+  /** Username, or "automated" when the ApplicationSet or auto-sync triggered it. */
+  initiatedBy: string | undefined;
+}
+
+/** One modified resource from the managed-resources endpoint. ArgoCD precomputes `diff`. */
+export interface ResourceDiff {
+  group: string;
+  kind: string;
+  namespace: string;
+  name: string;
+  modified: boolean;
+  diff: string;
+}
+
+/** `revisions/{revision}/metadata`: who committed what, for the revision actually deployed. */
+export interface RevisionMetadata {
+  author: string | undefined;
+  date: string | undefined;
+  message: string | undefined;
+}
+
 export interface AppDetail extends AppSummary {
   conditions: AppCondition[];
   summaryImages: string[];
@@ -53,4 +113,9 @@ export interface AppDetail extends AppSummary {
   lastSyncRevision: string | undefined;
   lastSyncDeployedAt: string | undefined;
   syncResources: SyncResultResource[];
+  resources: ResourceStatus[];
+  resourceCounts: ResourceCounts;
+  syncPolicy: SyncPolicy;
+  history: HistoryEntry[];
+  reconciledAt: string | undefined;
 }

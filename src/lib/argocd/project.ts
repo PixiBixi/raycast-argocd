@@ -7,8 +7,19 @@
  * than substituted with a placeholder, which would show up as a phantom application.
  */
 
-import { parseHealth, parseOperationPhase, parseSync } from "../model/status";
-import type { AppCondition, AppDetail, AppSummary, SyncResultResource } from "./types";
+import { isAttentionWorthy, parseHealth, parseOperationPhase, parseSync } from "../model/status";
+import type {
+  AppCondition,
+  AppDetail,
+  AppSummary,
+  HistoryEntry,
+  ResourceCounts,
+  ResourceDiff,
+  ResourceStatus,
+  RevisionMetadata,
+  SyncPolicy,
+  SyncResultResource,
+} from "./types";
 
 /** ArgoCD omits metadata.namespace for applications living in the control-plane namespace. */
 const DEFAULT_APP_NAMESPACE = "argocd";
@@ -146,6 +157,162 @@ function projectSyncResources(status: Dict | undefined): SyncResultResource[] {
   return resources;
 }
 
+function asBool(value: unknown): boolean {
+  return value === true;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function asStringArray(value: unknown): string[] {
+  return asArray(value).filter((item): item is string => typeof item === "string");
+}
+
+/**
+ * `status.resources` is the resource inventory ArgoCD keeps on the application itself, so this
+ * is the whole per-resource picture with no extra request. An entry with no kind and no name is
+ * not identifiable and is dropped.
+ */
+export function projectResources(status: unknown): ResourceStatus[] {
+  const resources: ResourceStatus[] = [];
+  for (const entry of asArray(asDict(status)?.resources)) {
+    const resource = asDict(entry);
+    const name = asString(resource?.name);
+    const kind = asString(resource?.kind);
+    if (!resource || (!name && !kind)) {
+      continue;
+    }
+    const rawStatus = asString(resource.status);
+    resources.push({
+      group: asString(resource.group) ?? "",
+      version: asString(resource.version) ?? "",
+      kind: kind ?? "",
+      namespace: asString(resource.namespace) ?? "",
+      name: name ?? "",
+      // An empty status is meaningful: ArgoCD has not compared this resource yet, which is not
+      // the same as Unknown.
+      status: rawStatus === undefined ? "" : parseSync(rawStatus),
+      health:
+        asString(dig(resource, "health", "status")) === undefined
+          ? undefined
+          : parseHealth(asString(dig(resource, "health", "status"))),
+      hook: asBool(resource.hook),
+      requiresPruning: asBool(resource.requiresPruning),
+      syncWave: asNumber(resource.syncWave),
+    });
+  }
+  return resources;
+}
+
+export function countResources(resources: ResourceStatus[]): ResourceCounts {
+  const counts: ResourceCounts = { total: 0, outOfSync: 0, degraded: 0, needsPruning: 0 };
+  for (const resource of resources) {
+    counts.total += 1;
+    if (resource.status === "OutOfSync") counts.outOfSync += 1;
+    if (resource.health === "Degraded") counts.degraded += 1;
+    if (resource.requiresPruning) counts.needsPruning += 1;
+  }
+  return counts;
+}
+
+/** True for a resource the operator needs to look at, matching the list's own definition. */
+export function resourceNeedsAttention(resource: ResourceStatus): boolean {
+  if (resource.requiresPruning) {
+    return true;
+  }
+  return isAttentionWorthy(
+    resource.health ?? "Unknown",
+    resource.status === "" ? "Unknown" : resource.status,
+  );
+}
+
+/**
+ * Attention first, then by kind and name. An operator opening a resource list on an out-of-sync
+ * application is looking for the handful that are wrong, not for an alphabet.
+ */
+export function orderResources(resources: ResourceStatus[]): ResourceStatus[] {
+  return [...resources].sort((a, b) => {
+    const attention = Number(resourceNeedsAttention(b)) - Number(resourceNeedsAttention(a));
+    if (attention !== 0) {
+      return attention;
+    }
+    return a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name);
+  });
+}
+
+export function resourceKey(resource: ResourceStatus): string {
+  return [resource.group, resource.kind, resource.namespace, resource.name].join("/");
+}
+
+export function projectSyncPolicy(spec: unknown): SyncPolicy {
+  const policy = asDict(asDict(spec)?.syncPolicy);
+  const automated = asDict(policy?.automated);
+  return {
+    // ArgoCD 3.x added an explicit `enabled` flag; its absence means the block itself is the
+    // switch, which is how every earlier version behaved.
+    automated: automated !== undefined && automated.enabled !== false,
+    prune: asBool(automated?.prune),
+    selfHeal: asBool(automated?.selfHeal),
+    allowEmpty: asBool(automated?.allowEmpty),
+    syncOptions: asStringArray(policy?.syncOptions),
+  };
+}
+
+/** Newest first, capped: ArgoCD keeps a long history and only the recent end is useful. */
+export function projectHistory(status: unknown, limit = 5): HistoryEntry[] {
+  const entries = asArray(asDict(status)?.history);
+  const projected: HistoryEntry[] = [];
+  for (const entry of [...entries].reverse().slice(0, limit)) {
+    const record = asDict(entry);
+    if (!record) {
+      continue;
+    }
+    const initiatedBy = asDict(record.initiatedBy);
+    projected.push({
+      revision: asString(record.revision),
+      deployedAt: asString(record.deployedAt),
+      deployStartedAt: asString(record.deployStartedAt),
+      initiatedBy: asBool(initiatedBy?.automated) ? "automated" : asString(initiatedBy?.username),
+    });
+  }
+  return projected;
+}
+
+/**
+ * One entry of the managed-resources response. `liveState`, `targetState` and
+ * `predictedLiveState` are deliberately not kept: they are the bulk of the payload and the
+ * precomputed `diff` is what gets rendered.
+ */
+export function projectResourceDiff(raw: unknown): ResourceDiff | undefined {
+  const entry = asDict(raw);
+  if (!entry) {
+    return undefined;
+  }
+  const name = asString(entry.name);
+  const kind = asString(entry.kind);
+  if (!name && !kind) {
+    return undefined;
+  }
+  return {
+    group: asString(entry.group) ?? "",
+    kind: kind ?? "",
+    namespace: asString(entry.namespace) ?? "",
+    name: name ?? "",
+    modified: asBool(entry.modified),
+    diff: asString(entry.diff) ?? "",
+  };
+}
+
+export function projectRevisionMetadata(raw: unknown): RevisionMetadata {
+  const entry = asDict(raw);
+  return {
+    author: asString(entry?.author),
+    date: asString(entry?.date),
+    message: asString(entry?.message)?.trim(),
+  };
+}
+
 export function projectDetail(raw: unknown, instanceId: string): AppDetail | undefined {
   const summary = projectSummary(raw, instanceId);
   if (!summary) {
@@ -162,6 +329,8 @@ export function projectDetail(raw: unknown, instanceId: string): AppDetail | und
     .map((image) => asString(image))
     .filter((image): image is string => image !== undefined);
 
+  const resources = projectResources(status);
+
   return {
     ...summary,
     conditions: projectConditions(status),
@@ -171,5 +340,10 @@ export function projectDetail(raw: unknown, instanceId: string): AppDetail | und
     lastSyncRevision: asString(latest?.revision),
     lastSyncDeployedAt: asString(latest?.deployedAt),
     syncResources: projectSyncResources(status),
+    resources,
+    resourceCounts: countResources(resources),
+    syncPolicy: projectSyncPolicy(app?.spec),
+    history: projectHistory(status),
+    reconciledAt: asString(status?.reconciledAt),
   };
 }

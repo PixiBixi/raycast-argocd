@@ -4,7 +4,20 @@ import {
   MEASURED_LIST_GZIP_BYTES,
   SUPPORTED_LIST_FILTERS,
 } from "../../../src/lib/argocd/fields";
-import { buildHaystack, projectDetail, projectSummary } from "../../../src/lib/argocd/project";
+import {
+  buildHaystack,
+  countResources,
+  projectDetail,
+  projectHistory,
+  projectResourceDiff,
+  projectResources,
+  projectRevisionMetadata,
+  projectSummary,
+  projectSyncPolicy,
+  orderResources,
+  resourceKey,
+  resourceNeedsAttention,
+} from "../../../src/lib/argocd/project";
 
 const RAW_APP = {
   metadata: {
@@ -225,5 +238,303 @@ describe("list filters", () => {
   it("keeps the measured list size on record, since it is what the read path is built around", () => {
     expect(MEASURED_LIST_APPLICATIONS).toBeGreaterThan(2000);
     expect(MEASURED_LIST_GZIP_BYTES).toBeLessThan(5 * 1024 * 1024);
+  });
+});
+
+describe("projectResources", () => {
+  const STATUS = {
+    resources: [
+      {
+        group: "apps",
+        version: "v1",
+        kind: "Deployment",
+        namespace: "arch-ux",
+        name: "arch-ux",
+        status: "OutOfSync",
+        health: { status: "Progressing" },
+        syncWave: 1,
+      },
+      { kind: "Service", name: "arch-ux", status: "Synced", health: { status: "Healthy" } },
+      { kind: "ConfigMap", name: "stale", status: "OutOfSync", requiresPruning: true },
+      { kind: "Job", name: "migrate", hook: true, status: "Synced" },
+      // No comparison yet: ArgoCD leaves status empty, which is not the same as Unknown.
+      { kind: "Secret", name: "pending" },
+      { namespace: "arch-ux" },
+    ],
+  };
+
+  it("projects every identifiable resource", () => {
+    const resources = projectResources(STATUS);
+    expect(resources.map((r) => r.name)).toEqual(["arch-ux", "arch-ux", "stale", "migrate", "pending"]);
+  });
+
+  it("keeps the full identity so a resource can be addressed", () => {
+    expect(projectResources(STATUS)[0]).toEqual({
+      group: "apps",
+      version: "v1",
+      kind: "Deployment",
+      namespace: "arch-ux",
+      name: "arch-ux",
+      status: "OutOfSync",
+      health: "Progressing",
+      hook: false,
+      requiresPruning: false,
+      syncWave: 1,
+    });
+  });
+
+  it("distinguishes an uncompared resource from an unknown one", () => {
+    const pending = projectResources(STATUS).find((r) => r.name === "pending");
+    expect(pending?.status).toBe("");
+    expect(pending?.health).toBeUndefined();
+  });
+
+  it("flags hooks and resources awaiting pruning", () => {
+    const resources = projectResources(STATUS);
+    expect(resources.find((r) => r.name === "migrate")?.hook).toBe(true);
+    expect(resources.find((r) => r.name === "stale")?.requiresPruning).toBe(true);
+  });
+
+  it("returns nothing when there are no resources", () => {
+    expect(projectResources({})).toEqual([]);
+    expect(projectResources(undefined)).toEqual([]);
+    expect(projectResources({ resources: "nope" })).toEqual([]);
+  });
+});
+
+describe("countResources", () => {
+  it("counts each condition independently", () => {
+    const resources = projectResources({
+      resources: [
+        { kind: "A", name: "a", status: "OutOfSync", health: { status: "Degraded" } },
+        { kind: "B", name: "b", status: "OutOfSync", requiresPruning: true },
+        { kind: "C", name: "c", status: "Synced", health: { status: "Healthy" } },
+      ],
+    });
+    expect(countResources(resources)).toEqual({
+      total: 3,
+      outOfSync: 2,
+      degraded: 1,
+      needsPruning: 1,
+    });
+  });
+
+  it("counts nothing for an empty inventory", () => {
+    expect(countResources([])).toEqual({ total: 0, outOfSync: 0, degraded: 0, needsPruning: 0 });
+  });
+});
+
+describe("resourceNeedsAttention", () => {
+  const one = (raw: Record<string, unknown>) => projectResources({ resources: [raw] })[0]!;
+
+  it("flags out of sync, degraded, missing and pending pruning", () => {
+    expect(resourceNeedsAttention(one({ kind: "A", name: "a", status: "OutOfSync" }))).toBe(true);
+    expect(resourceNeedsAttention(one({ kind: "A", name: "a", health: { status: "Degraded" } }))).toBe(true);
+    expect(resourceNeedsAttention(one({ kind: "A", name: "a", health: { status: "Missing" } }))).toBe(true);
+    expect(resourceNeedsAttention(one({ kind: "A", name: "a", requiresPruning: true }))).toBe(true);
+  });
+
+  it("leaves a synced and healthy resource alone", () => {
+    expect(
+      resourceNeedsAttention(one({ kind: "A", name: "a", status: "Synced", health: { status: "Healthy" } })),
+    ).toBe(false);
+  });
+
+  it("does not flag a resource ArgoCD has not compared yet", () => {
+    expect(resourceNeedsAttention(one({ kind: "A", name: "a" }))).toBe(false);
+  });
+});
+
+describe("projectSyncPolicy", () => {
+  it("reads an automated policy with prune and self-heal", () => {
+    expect(
+      projectSyncPolicy({
+        syncPolicy: {
+          automated: { prune: true, selfHeal: true, allowEmpty: false },
+          syncOptions: ["CreateNamespace=true"],
+        },
+      }),
+    ).toEqual({
+      automated: true,
+      prune: true,
+      selfHeal: true,
+      allowEmpty: false,
+      syncOptions: ["CreateNamespace=true"],
+    });
+  });
+
+  it("treats the presence of the automated block as the switch, as every version before 3.x did", () => {
+    expect(projectSyncPolicy({ syncPolicy: { automated: {} } }).automated).toBe(true);
+  });
+
+  it("honours an explicit enabled: false", () => {
+    expect(projectSyncPolicy({ syncPolicy: { automated: { enabled: false, prune: true } } }).automated).toBe(
+      false,
+    );
+  });
+
+  it("reports a manual application as not automated", () => {
+    expect(projectSyncPolicy({ syncPolicy: { syncOptions: ["Validate=false"] } })).toEqual({
+      automated: false,
+      prune: false,
+      selfHeal: false,
+      allowEmpty: false,
+      syncOptions: ["Validate=false"],
+    });
+    expect(projectSyncPolicy({}).automated).toBe(false);
+    expect(projectSyncPolicy(undefined).automated).toBe(false);
+  });
+});
+
+describe("projectHistory", () => {
+  const STATUS = {
+    history: [
+      { id: 1, revision: "aaa", deployedAt: "2026-09-01T09:00:00Z", initiatedBy: { username: "someone" } },
+      { id: 2, revision: "bbb", deployedAt: "2026-09-05T09:00:00Z", initiatedBy: { automated: true } },
+      { id: 3, revision: "ccc", deployedAt: "2026-09-07T09:00:00Z", deployStartedAt: "2026-09-07T08:59:00Z" },
+    ],
+  };
+
+  it("returns the most recent deployments first, since ArgoCD appends", () => {
+    expect(projectHistory(STATUS).map((entry) => entry.revision)).toEqual(["ccc", "bbb", "aaa"]);
+  });
+
+  it("names who triggered each deployment", () => {
+    const history = projectHistory(STATUS);
+    expect(history[0]?.initiatedBy).toBeUndefined();
+    expect(history[1]?.initiatedBy).toBe("automated");
+    expect(history[2]?.initiatedBy).toBe("someone");
+  });
+
+  it("caps the history, because ArgoCD keeps a long one", () => {
+    const long = { history: Array.from({ length: 20 }, (_, index) => ({ revision: `r${index}` })) };
+    expect(projectHistory(long)).toHaveLength(5);
+    expect(projectHistory(long, 2).map((entry) => entry.revision)).toEqual(["r19", "r18"]);
+  });
+
+  it("returns nothing for an application that never deployed", () => {
+    expect(projectHistory({})).toEqual([]);
+    expect(projectHistory({ history: "nope" })).toEqual([]);
+  });
+});
+
+describe("projectResourceDiff", () => {
+  it("keeps the identity, the modified flag and the precomputed diff", () => {
+    expect(
+      projectResourceDiff({
+        group: "apps",
+        kind: "Deployment",
+        namespace: "arch-ux",
+        name: "arch-ux",
+        modified: true,
+        diff: "- replicas: 1\n+ replicas: 2",
+        liveState: "{...huge...}",
+        targetState: "{...huge...}",
+        predictedLiveState: "{...huge...}",
+      }),
+    ).toEqual({
+      group: "apps",
+      kind: "Deployment",
+      namespace: "arch-ux",
+      name: "arch-ux",
+      modified: true,
+      diff: "- replicas: 1\n+ replicas: 2",
+    });
+  });
+
+  it("drops the states that make up the bulk of the payload", () => {
+    const projected = projectResourceDiff({ kind: "Deployment", name: "a", liveState: "x" });
+    expect(projected).not.toHaveProperty("liveState");
+    expect(projected).not.toHaveProperty("targetState");
+  });
+
+  it("returns undefined for an entry it cannot identify", () => {
+    expect(projectResourceDiff({})).toBeUndefined();
+    expect(projectResourceDiff(null)).toBeUndefined();
+  });
+});
+
+describe("projectRevisionMetadata", () => {
+  it("reads the author, the date and the trimmed message", () => {
+    expect(
+      projectRevisionMetadata({ author: "Someone <a@example.com>", date: "2026-09-07T09:00:00Z", message: "fix\n" }),
+    ).toEqual({ author: "Someone <a@example.com>", date: "2026-09-07T09:00:00Z", message: "fix" });
+  });
+
+  it("tolerates an absent or empty answer", () => {
+    expect(projectRevisionMetadata({})).toEqual({ author: undefined, date: undefined, message: undefined });
+    expect(projectRevisionMetadata(undefined).author).toBeUndefined();
+  });
+});
+
+describe("projectDetail resource inventory", () => {
+  it("carries the resources, their counts, the policy and the history", () => {
+    const detail = projectDetail(
+      {
+        metadata: { name: "arch-ux" },
+        spec: { project: "coe-arch-dev", syncPolicy: { automated: { prune: true } } },
+        status: {
+          sync: { status: "OutOfSync" },
+          health: { status: "Progressing" },
+          reconciledAt: "2026-09-08T09:30:00Z",
+          resources: [{ kind: "Deployment", name: "arch-ux", status: "OutOfSync" }],
+          history: [{ revision: "aaa", deployedAt: "2026-09-07T09:00:00Z" }],
+        },
+      },
+      "i1",
+    );
+    expect(detail?.resources).toHaveLength(1);
+    expect(detail?.resourceCounts).toMatchObject({ total: 1, outOfSync: 1 });
+    expect(detail?.syncPolicy).toMatchObject({ automated: true, prune: true, selfHeal: false });
+    expect(detail?.history.map((entry) => entry.revision)).toEqual(["aaa"]);
+    expect(detail?.reconciledAt).toBe("2026-09-08T09:30:00Z");
+  });
+
+  it("stays sane for an application with no status at all", () => {
+    const detail = projectDetail({ metadata: { name: "new" } }, "i1");
+    expect(detail).toMatchObject({
+      resources: [],
+      resourceCounts: { total: 0, outOfSync: 0, degraded: 0, needsPruning: 0 },
+      history: [],
+      reconciledAt: undefined,
+    });
+    expect(detail?.syncPolicy.automated).toBe(false);
+  });
+});
+
+describe("orderResources", () => {
+  const resources = projectResources({
+    resources: [
+      { kind: "Service", name: "zeta", status: "Synced", health: { status: "Healthy" } },
+      { kind: "Deployment", name: "alpha", status: "Synced", health: { status: "Healthy" } },
+      { kind: "ConfigMap", name: "broken", status: "OutOfSync" },
+      { kind: "Deployment", name: "sick", health: { status: "Degraded" } },
+    ],
+  });
+
+  it("puts what needs attention first, then orders by kind and name", () => {
+    expect(orderResources(resources).map((r) => r.name)).toEqual(["broken", "sick", "alpha", "zeta"]);
+  });
+
+  it("does not mutate the input", () => {
+    const before = resources.map((r) => r.name);
+    orderResources(resources);
+    expect(resources.map((r) => r.name)).toEqual(before);
+  });
+});
+
+describe("resourceKey", () => {
+  it("addresses a resource the way ArgoCD's own deep links do", () => {
+    const resource = projectResources({
+      resources: [{ group: "apps", kind: "Deployment", namespace: "arch-ux", name: "arch-ux" }],
+    })[0]!;
+    expect(resourceKey(resource)).toBe("apps/Deployment/arch-ux/arch-ux");
+  });
+
+  it("keeps the empty group of a core resource, which is what ArgoCD expects", () => {
+    const resource = projectResources({
+      resources: [{ kind: "Service", namespace: "arch-ux", name: "arch-ux" }],
+    })[0]!;
+    expect(resourceKey(resource)).toBe("/Service/arch-ux/arch-ux");
   });
 });

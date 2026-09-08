@@ -217,17 +217,27 @@ A value that does not parse falls back to the default; a value out of range is c
 
 ## Application actions
 
-| Action                               | Shortcut          | Notes                                                            |
-| ------------------------------------ | ----------------- | ---------------------------------------------------------------- |
-| Show details                         | `↵`               | Sync, health, source, destination, conditions, last sync result. |
-| Open in ArgoCD                       |                   | Deep link to the application in the web UI.                      |
-| Show sync status                     | `⌘Y`              | Follows a running sync until it finishes.                        |
-| Refresh application                  | `⌘R`              | `refresh=normal`. A read, so it works on read-only instances.    |
-| Hard refresh application             | `⌘⇧R`             | `refresh=hard`.                                                  |
-| Sync with options                    |                   | Only on an instance with write operations allowed.               |
-| Quick sync                           |                   | Default options, behind a confirmation.                          |
-| Show sibling applications            |                   | The other applications the same ApplicationSet generated.        |
-| Copy name, copy URL, open repository | `⌘⇧C` for the URL |                                                                  |
+| Action                               | Shortcut          | Notes                                                                                                                                                         |
+| ------------------------------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Show details                         | `↵`               | Leads with the resources that need attention, then the deployed commit, the recent deployments and the images.                                                |
+| Show resources                       | `⌘O`              | Every object the application manages, with its sync state, health, sync wave, hook and prune flags. Costs no request: it comes inside the application object. |
+| Show diff                            | `⌘D`              | What is out of sync, from `managed-resources`. ArgoCD precomputes the diff. Offered when the application is out of sync.                                      |
+| Show sync status                     | `⌘Y`              | Follows a running sync until it finishes.                                                                                                                     |
+| Open in ArgoCD                       |                   | Deep link to the application, or to one selected resource from the resources view.                                                                            |
+| Refresh application                  | `⌘R`              | `refresh=normal`. A read, so it works on read-only instances.                                                                                                 |
+| Hard refresh application             | `⌘⇧R`             | `refresh=hard`.                                                                                                                                               |
+| Sync with options                    |                   | Only on an instance with write operations allowed.                                                                                                            |
+| Quick sync                           |                   | Default options, behind a confirmation.                                                                                                                       |
+| Show sibling applications            |                   | The other applications the same ApplicationSet generated.                                                                                                     |
+| Copy name, copy URL, open repository | `⌘⇧C` for the URL |                                                                                                                                                               |
+
+The detail view also shows the **sync policy** as tags: `automated`, `prune`, `self-heal`, or
+`manual`. Whether auto-sync is on changes what a manual sync means, so it is next to the sync
+status rather than buried.
+
+From the resources view, each resource offers its own diff, a deep link that opens it selected
+in the web UI, and a **Copy kubectl command** action that yields a ready
+`kubectl -n <namespace> get <kind>.<group> <name> -o yaml`.
 
 ## Sync options
 

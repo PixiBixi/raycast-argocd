@@ -14,7 +14,8 @@ import {
 import { useCachedPromise } from "@raycast/utils";
 import { useEffect } from "react";
 import { healthSeverity, syncSeverity } from "../lib/model/status";
-import type { AppDetail, AppSummary } from "../lib/argocd/types";
+import { orderResources, resourceNeedsAttention } from "../lib/argocd/project";
+import type { AppDetail, AppSummary, ResourceStatus, RevisionMetadata } from "../lib/argocd/types";
 import type { ArgoInstance } from "../lib/config/instances";
 import { appKey } from "../lib/search/score";
 import { DEFAULT_SYNC_FORM, buildSyncRequest } from "../lib/argocd/sync";
@@ -24,6 +25,8 @@ import { environmentColor, healthIcon, phaseIcon, severityColor, syncIcon } from
 import { SyncForm } from "./SyncForm";
 import { SyncStatus } from "./SyncStatus";
 import { AppSetApplications } from "./AppSetApplications";
+import { ResourcesList } from "./ResourcesList";
+import { ResourceDiffView } from "./ResourceDiffView";
 
 interface Props {
   app: AppSummary;
@@ -31,25 +34,81 @@ interface Props {
   onRefresh: (instanceId?: string) => void;
 }
 
-function shorten(revision: string | undefined): string | undefined {
+function shortRevision(revision: string | undefined): string | undefined {
   if (!revision) {
     return undefined;
   }
   return /^[0-9a-f]{40}$/i.test(revision) ? revision.slice(0, 7) : revision;
 }
 
-function markdown(app: AppSummary, detail: AppDetail | undefined): string {
+function resourceRow(resource: ResourceStatus): string {
+  const flags = [
+    resource.status === "" ? "not compared" : resource.status,
+    resource.health,
+    resource.requiresPruning ? "**needs pruning**" : undefined,
+    resource.hook ? "hook" : undefined,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const identity = [resource.namespace, resource.name].filter(Boolean).join("/");
+  return `| ${resource.kind || "?"} | ${identity} | ${flags} |`;
+}
+
+/**
+ * Ordered by what the operator came for. An out-of-sync application raises exactly one
+ * question, "out of sync in what way", so the resources that answer it come first and the
+ * metadata comes after.
+ */
+function markdown(
+  app: AppSummary,
+  detail: AppDetail | undefined,
+  revision: RevisionMetadata | undefined,
+): string {
   const lines = [`# ${app.name}`];
 
   if (detail?.operationMessage) {
     lines.push("", `> ${detail.operationMessage}`);
   }
 
-  const conditions = detail?.conditions ?? [];
-  if (conditions.length > 0) {
-    lines.push("", "## Conditions", "");
-    for (const condition of conditions) {
-      lines.push(`- **${condition.type}**: ${condition.message || "no message"}`);
+  for (const condition of detail?.conditions ?? []) {
+    lines.push("", `> **${condition.type}**: ${condition.message || "no message"}`);
+  }
+
+  const attention = (detail?.resources ?? []).filter(resourceNeedsAttention);
+  if (attention.length > 0) {
+    const shown = orderResources(attention).slice(0, 20);
+    lines.push(
+      "",
+      `## ${attention.length} resource${attention.length === 1 ? "" : "s"} need attention`,
+      "",
+      "| Kind | Resource | State |",
+      "| --- | --- | --- |",
+      ...shown.map(resourceRow),
+    );
+    if (attention.length > shown.length) {
+      lines.push("", `_and ${attention.length - shown.length} more, in the resources view_`);
+    }
+  } else if (detail && detail.resourceCounts.total > 0) {
+    lines.push("", `## Resources`, "", `All ${detail.resourceCounts.total} managed resources are in order.`);
+  }
+
+  if (revision?.message) {
+    lines.push(
+      "",
+      "## Deployed commit",
+      "",
+      `**${shortRevision(detail?.revision ?? app.revision) ?? "unknown"}**${revision.author ? ` by ${revision.author}` : ""}${revision.date ? ` on ${revision.date}` : ""}`,
+      "",
+      `> ${revision.message.split("\n")[0]}`,
+    );
+  }
+
+  if (detail && detail.history.length > 0) {
+    lines.push("", "## Recent deployments", "", "| Revision | Deployed | By |", "| --- | --- | --- |");
+    for (const entry of detail.history) {
+      lines.push(
+        `| ${shortRevision(entry.revision) ?? "?"} | ${entry.deployedAt ?? "?"} | ${entry.initiatedBy ?? "unknown"} |`,
+      );
     }
   }
 
@@ -62,12 +121,20 @@ function markdown(app: AppSummary, detail: AppDetail | undefined): string {
   }
 
   if (detail && detail.syncResources.length > 0) {
-    lines.push("", "## Last sync result", "", "| Kind | Name | Status |", "| --- | --- | --- |");
-    for (const resource of detail.syncResources.slice(0, 30)) {
-      lines.push(`| ${resource.kind || "?"} | ${resource.name} | ${resource.status || "?"} |`);
-    }
-    if (detail.syncResources.length > 30) {
-      lines.push("", `_and ${detail.syncResources.length - 30} more resources_`);
+    const failed = detail.syncResources.filter((resource) => resource.message.length > 0);
+    if (failed.length > 0) {
+      lines.push(
+        "",
+        "## Last sync messages",
+        "",
+        "| Kind | Name | Status | Message |",
+        "| --- | --- | --- | --- |",
+      );
+      for (const resource of failed.slice(0, 20)) {
+        lines.push(
+          `| ${resource.kind || "?"} | ${resource.name} | ${resource.status || "?"} | ${resource.message} |`,
+        );
+      }
     }
   }
 
@@ -94,6 +161,23 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
   );
 
   const current = detail ?? app;
+
+  // One small request for the commit actually deployed. Skipped until the revision is known,
+  // and a failure is swallowed: this is context, not something to block the view on.
+  const { data: revisionMetadata } = useCachedPromise(
+    async (name: string, namespace: string, revision: string | undefined) => {
+      if (!revision) {
+        return undefined;
+      }
+      try {
+        return await makeClient(instance).getRevisionMetadata(name, namespace, revision);
+      } catch {
+        return undefined;
+      }
+    },
+    [app.name, app.namespace, current.revision],
+    { keepPreviousData: true },
+  );
 
   async function refreshApplication(mode: "normal" | "hard") {
     const toast = await showToast({
@@ -140,7 +224,7 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
     <Detail
       isLoading={isLoading}
       navigationTitle={`${app.name} on ${instance.name}`}
-      markdown={markdown(app, detail)}
+      markdown={markdown(app, detail, revisionMetadata)}
       metadata={
         <Detail.Metadata>
           <Detail.Metadata.TagList title="Instance">
@@ -157,6 +241,34 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
               title="Last operation"
               text={`${current.phase}${current.finishedAt ? ` at ${current.finishedAt}` : ""}`}
               icon={phaseIcon(current.phase)}
+            />
+          ) : null}
+          {detail ? (
+            <Detail.Metadata.TagList title="Sync policy">
+              {detail.syncPolicy.automated ? (
+                <Detail.Metadata.TagList.Item text="automated" color={Color.Blue} />
+              ) : (
+                <Detail.Metadata.TagList.Item text="manual" color={Color.SecondaryText} />
+              )}
+              {detail.syncPolicy.prune ? (
+                <Detail.Metadata.TagList.Item text="prune" color={Color.Orange} />
+              ) : null}
+              {detail.syncPolicy.selfHeal ? (
+                <Detail.Metadata.TagList.Item text="self-heal" color={Color.Green} />
+              ) : null}
+            </Detail.Metadata.TagList>
+          ) : null}
+          {detail && detail.resourceCounts.total > 0 ? (
+            <Detail.Metadata.Label
+              title="Resources"
+              text={resourceSummary(detail.resourceCounts)}
+              icon={{
+                source: Icon.Box,
+                tintColor:
+                  detail.resourceCounts.outOfSync + detail.resourceCounts.degraded > 0
+                    ? Color.Yellow
+                    : Color.Green,
+              }}
             />
           ) : null}
           <Detail.Metadata.Separator />
@@ -182,17 +294,23 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
           {current.targetRevision ? (
             <Detail.Metadata.Label title="Target revision" text={current.targetRevision} />
           ) : null}
-          {shorten(current.revision) ? (
+          {shortRevision(current.revision) ? (
             <Detail.Metadata.Label
               title="Current revision"
-              text={shorten(current.revision)}
+              text={shortRevision(current.revision)}
               icon={{ source: Icon.Dot, tintColor: severityColor(syncSeverity(current.sync)) }}
             />
+          ) : null}
+          {detail?.reconciledAt ? (
+            <Detail.Metadata.Label title="Last reconciled" text={detail.reconciledAt} />
+          ) : null}
+          {detail && detail.syncPolicy.syncOptions.length > 0 ? (
+            <Detail.Metadata.Label title="Sync options" text={detail.syncPolicy.syncOptions.join(", ")} />
           ) : null}
           {detail?.lastSyncDeployedAt ? (
             <Detail.Metadata.Label
               title="Last deployed"
-              text={`${shorten(detail.lastSyncRevision) ?? "unknown"} at ${detail.lastSyncDeployedAt}`}
+              text={`${shortRevision(detail.lastSyncRevision) ?? "unknown"} at ${detail.lastSyncDeployedAt}`}
               icon={{ source: Icon.Clock, tintColor: severityColor(healthSeverity(current.health)) }}
             />
           ) : null}
@@ -202,6 +320,36 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
         <ActionPanel>
           <ActionPanel.Section>
             <Action.OpenInBrowser title="Open in ArgoCD" url={url} />
+            {detail && detail.resourceCounts.total > 0 ? (
+              <Action
+                title="Show Resources"
+                icon={Icon.Box}
+                shortcut={Keyboard.Shortcut.Common.Open}
+                onAction={() =>
+                  push(
+                    <ResourcesList
+                      appName={app.name}
+                      appNamespace={app.namespace}
+                      instance={instance}
+                      resources={detail.resources}
+                      counts={detail.resourceCounts}
+                    />,
+                  )
+                }
+              />
+            ) : null}
+            {current.sync === "OutOfSync" ? (
+              <Action
+                title="Show Diff"
+                icon={Icon.Document}
+                shortcut={{ modifiers: ["cmd"], key: "d" }}
+                onAction={() =>
+                  push(
+                    <ResourceDiffView appName={app.name} appNamespace={app.namespace} instance={instance} />,
+                  )
+                }
+              />
+            ) : null}
             <Action
               title="Show Sync Status"
               icon={Icon.Clock}
@@ -268,4 +416,18 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
       }
     />
   );
+}
+
+function resourceSummary(counts: {
+  total: number;
+  outOfSync: number;
+  degraded: number;
+  needsPruning: number;
+}): string {
+  const problems = [
+    counts.outOfSync > 0 ? `${counts.outOfSync} out of sync` : undefined,
+    counts.degraded > 0 ? `${counts.degraded} degraded` : undefined,
+    counts.needsPruning > 0 ? `${counts.needsPruning} to prune` : undefined,
+  ].filter(Boolean);
+  return problems.length === 0 ? `${counts.total}, all in order` : `${counts.total}: ${problems.join(", ")}`;
 }

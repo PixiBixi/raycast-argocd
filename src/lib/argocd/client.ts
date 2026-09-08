@@ -27,10 +27,10 @@ import {
   TimeoutError,
 } from "./errors";
 import { projectAppSet, type AppSetSummary } from "./appset";
-import { projectDetail, projectSummary } from "./project";
+import { projectDetail, projectResourceDiff, projectRevisionMetadata, projectSummary } from "./project";
 import { decodeStream, streamArrayItems } from "./stream";
 import type { SyncRequest } from "./sync";
-import type { AppDetail, AppSummary } from "./types";
+import type { AppDetail, AppSummary, ResourceDiff, ResourceStatus, RevisionMetadata } from "./types";
 
 export interface ClientDeps {
   fetch: typeof globalThis.fetch;
@@ -88,8 +88,9 @@ export class ArgoClient {
     path: string,
     project: (item: unknown) => T | undefined,
     signal?: AbortSignal,
+    query: Record<string, string> = {},
   ): Promise<T[]> {
-    const response = await this.send("GET", path, {}, undefined, signal);
+    const response = await this.send("GET", path, query, undefined, signal);
     if (!response.body) {
       throw new ApiError(`${this.instance.name} returned an empty response.`, response.status);
     }
@@ -129,6 +130,58 @@ export class ArgoClient {
 
   async getApplicationStatus(name: string, appNamespace: string, signal?: AbortSignal): Promise<AppDetail> {
     return this.readApplication(name, { appNamespace }, signal);
+  }
+
+  /**
+   * The diff of what is out of sync. ArgoCD precomputes the `diff` string, so nothing here has
+   * to diff anything; the response is streamed because its `liveState`, `targetState` and
+   * `predictedLiveState` fields are the bulk of it and are dropped on projection.
+   *
+   * Passing a resource narrows the request to that one object, which is what the per-resource
+   * action does and what keeps the common case small.
+   */
+  async getManagedResources(
+    name: string,
+    appNamespace: string,
+    resource?: Pick<ResourceStatus, "group" | "kind" | "namespace" | "name" | "version">,
+    signal?: AbortSignal,
+  ): Promise<ResourceDiff[]> {
+    const query: Record<string, string> = { appNamespace };
+    if (resource) {
+      query.name = resource.name;
+      query.namespace = resource.namespace;
+      query.kind = resource.kind;
+      query.group = resource.group;
+      query.version = resource.version;
+    }
+    return this.streamList(
+      `/api/v1/applications/${encodeURIComponent(name)}/managed-resources`,
+      projectResourceDiff,
+      signal,
+      query,
+    );
+  }
+
+  /** Who committed the revision that is actually deployed, and what they wrote. */
+  async getRevisionMetadata(
+    name: string,
+    appNamespace: string,
+    revision: string,
+    signal?: AbortSignal,
+  ): Promise<RevisionMetadata> {
+    const body = await this.get(
+      `/api/v1/applications/${encodeURIComponent(name)}/revisions/${encodeURIComponent(revision)}/metadata`,
+      { appNamespace },
+      signal,
+    );
+    return projectRevisionMetadata(body);
+  }
+
+  /** Deep link that opens the application with one resource selected in the web UI. */
+  resourceUrl(name: string, appNamespace: string, resource: ResourceStatus): string {
+    const node = [resource.group, resource.kind, resource.namespace, resource.name].join("/");
+    const params = new URLSearchParams({ node, tab: "diff" });
+    return `${this.appUrl(name, appNamespace)}?${params.toString()}`;
   }
 
   async sync(name: string, appNamespace: string, body: SyncRequest, signal?: AbortSignal): Promise<void> {
