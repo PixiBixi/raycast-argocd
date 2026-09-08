@@ -1269,3 +1269,38 @@ The lesson generalises to the two bugs before it, and is now the reason all thre
 up together: a success path that is not verified against the thing it claims to have done will
 eventually claim something false. The probe claimed reachable on a 404, the empty state claimed
 an expiry it had not observed, and this claimed a stored token it had not read back.
+
+### A7: the stdin fix worked in a shell and not in Raycast (correction to A6)
+
+A6 fed the two `security -w` prompts over stdin, verified it against the real binary from a
+shell, and shipped. Inside Raycast the write still stored nothing, and the read-back added in A6
+is what said so out loud instead of reporting success.
+
+Two things had to be established rather than guessed:
+
+- **Not the terminal.** The hypothesis was that `security` reads its prompts from `/dev/tty` and
+  Raycast has no controlling terminal. Tested by forking, calling `setsid`, confirming
+  `/dev/tty` was no longer openable, and running the write: it still stored the value. So the
+  missing terminal is not the cause.
+- **stdin was not delivered.** In Raycast the item _was_ created with an empty password, so the
+  binary ran and only the input was missing. `execFileAsync` wrote the input with
+  `child.stdin?.end(input)`, and that optional chain writes nothing and reports nothing when
+  stdin is unavailable. A silent no-op, in the code whose whole job was to deliver the secret.
+
+Changes applied:
+
+- `execFileAsync` rejects when a caller supplies `input` and the child has no stdin, instead of
+  quietly skipping the write.
+- `writeTokenArgs(instanceId, token)` now passes the token after `-w`, in argv. The module
+  comment states the exposure this accepts and why it is the same boundary that already governs
+  the stored item, rather than claiming a protection the platform will not give.
+- the read-back now distinguishes its failure modes: a read that errored, an item that is
+  absent, and a value that differs, the last reporting **lengths only**, since the message
+  reaches a toast. One message for several causes is what made A6 hard to place.
+- the fake `security` in the tests drops the prompt simulation and gains cases for
+  stored-nothing, stored-something-else and read-back-denied.
+
+This is the fourth instance of one pattern, and the reason it keeps recurring is worth naming:
+each time, a step that could fail was written so that failing looked like succeeding. An
+optional chain that skips, an exit code that means nothing, a 404 that counts as reachable, a
+message that asserts a cause it never observed.

@@ -129,8 +129,20 @@ Two things to know before you run it:
 
 Set the instance's authentication mode to `API token in the keychain`, then use **Set API
 token**. The token goes into the macOS keychain under the service `raycast-argocd`, keyed by the
-instance id. It is never written to Raycast's storage, which is not encrypted, never passed on a
-command line where `ps` would show it, and never logged or copied to the clipboard.
+instance id. It is never written to Raycast's storage, which is not encrypted, and never logged
+or copied to the clipboard.
+
+It is passed to `/usr/bin/security` in the argument list, which is worth stating rather than
+glossing over. `security add-generic-password` cannot read a password from a file descriptor;
+its only alternative is a `-w` flag with no value, which prompts on the terminal, and those
+prompts do not receive stdin inside Raycast, where the write then stores an empty password and
+exits 0. So for the lifetime of one short-lived process the token is visible to processes
+running as the same user, which is the boundary that already governs the stored item:
+`security find-generic-password -w` hands it to any same-uid process without a prompt. macOS
+does not expose another user's arguments without root.
+
+The write is verified by reading the value back before success is reported, so a write that did
+not land fails loudly instead of showing a success toast.
 
 Inspect or remove it yourself with:
 
