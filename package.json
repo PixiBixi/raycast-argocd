@@ -128,13 +128,14 @@
     "dev": "ray develop",
     "lint": "ray lint",
     "fix-lint": "ray lint --fix",
-    "publish": "npx @raycast/api@latest publish",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "check:secrets": "./scripts/check-no-secrets.sh",
+    "store:payload": "./scripts/store-payload.sh"
   },
   "devDependencies": {
     "@raycast/eslint-config": "^2.2.0",
