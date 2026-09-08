@@ -239,6 +239,24 @@ From the resources view, each resource offers its own diff, a deep link that ope
 in the web UI, and a **Copy kubectl command** action that yields a ready
 `kubectl -n <namespace> get <kind>.<group> <name> -o yaml`.
 
+### How the diff is computed
+
+ArgoCD's `managed-resources` response declares a `diff` field and does not fill it in: its own
+web UI diffs `targetState` against `normalizedLiveState` in the browser. So the extension does
+the same. Each state is rendered to stable YAML-shaped text with sorted keys, then diffed line
+by line and shown as a unified diff with three lines of context.
+
+Sorting the keys is what keeps the result honest: two serialisations of the same object list
+their keys in different orders, and diffing them raw reports every line as changed. The fields
+ArgoCD itself ignores are dropped for the same reason: `status`, which the cluster writes rather
+than git, and `metadata.managedFields`, `creationTimestamp`, `generation`, `resourceVersion`,
+`uid` and `selfLink`, which always differ. Annotations are kept, since a tracking-id annotation
+is a difference that matters.
+
+A manifest past 4000 lines is reported as too large rather than compared, because the diff is a
+quadratic table and that is where the trade stops holding. If ArgoCD ever does populate its own
+`diff` field, that string is used instead.
+
 ## Sync options
 
 Each control maps to one field of the ArgoCD sync request. An untouched form sends an empty

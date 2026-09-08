@@ -1356,3 +1356,45 @@ The verification is worth naming, given the last four entries: the fix was check
 the real modules with esbuild and running them against the real 30.2 MB payload under
 `node --max-old-space-size=100`, both before and after. Not by reasoning about which approach
 ought to use less memory.
+
+### A9: the diff reported nothing, and the tables were unreadable
+
+Both found in use.
+
+**The diff.** `ResourceDiff` in the swagger declares a `diff` field, so A2 rendered it and
+described ArgoCD as precomputing the diff. It does not: its own web UI diffs `targetState`
+against `normalizedLiveState` in the browser. On an application whose web UI showed a clear
+difference on an `ExternalSecret` tracking-id annotation, the extension reported nothing.
+
+This is the third time the same reasoning has failed: `fields` existed in the UI's query string,
+`diff` exists in the schema, and in both cases the conclusion drawn was that the server does
+something it does not. A field being declared is not evidence that it is populated.
+
+So the diff is computed:
+
+- **`src/lib/diff/lineDiff.ts`** (new): longest common subsequence over lines via a dynamic
+  programming table, grouped into hunks with context, rendered as unified diff text. Manifests
+  are hundreds of lines, so the quadratic table is the right trade for readable code, and
+  `MAX_LINES = 4000` is the guard that keeps that true. 22 test cases: identical text, changed,
+  inserted and deleted lines, one side empty, CRLF, trailing newline, a repeated line, the
+  longest-subsequence property, hunk merging and splitting, 1-based start lines, clamping at
+  both ends of the file, and the size refusal.
+- **`src/lib/diff/manifest.ts`** (new): renders a manifest to stable YAML-shaped text with
+  sorted keys, dropping what ArgoCD's own diff ignores (`status`, and `managedFields`,
+  `creationTimestamp`, `generation`, `resourceVersion`, `uid`, `selfLink` under `metadata`).
+  Sorting is not cosmetic: two serialisations of the same object order their keys differently
+  and a raw diff reports every line as changed. 15 test cases, including one built from the real
+  reported case: a tracking-id annotation change plus a `refreshInterval` and a
+  `creationPolicy` present in the cluster and not in git.
+- **`projectResourceDiff`** computes the diff, derives `modified` from it rather than trusting
+  the API's flag, reports `added`/`removed` counts and a `tooLarge` flag, and still drops
+  `liveState`, `targetState` and `predictedLiveState` once the diff is rendered. ArgoCD's own
+  `diff` string is used when it is non-empty.
+
+**The tables.** The detail pane is a few hundred pixels wide and Raycast wraps a table cell by
+breaking the word, so a `Status` header rendered one letter per line and a four-column table was
+unreadable. Every table in the detail markdown is now one fact per line.
+
+**Also fixed:** the "Last sync messages" section listed every resource carrying a message, which
+on a successful sync means every resource, each saying `serverside-applied`. It now lists only
+resources whose status is `SyncFailed` or whose hook phase failed, and is absent otherwise.
