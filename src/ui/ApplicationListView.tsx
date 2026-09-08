@@ -8,7 +8,7 @@
  */
 
 import { Action, ActionPanel, Icon, List } from "@raycast/api";
-import type { ComponentProps, ReactElement } from "react";
+import type { ComponentProps } from "react";
 import { useMemo, useState } from "react";
 import { UnreachableError } from "../lib/argocd/errors";
 import { AuthError } from "../lib/auth/provider";
@@ -27,7 +27,9 @@ interface Props {
   onRefresh: (instanceId?: string) => void;
   onLogin: (instance: ArgoInstance) => void;
   navigationTitle?: string;
-  searchBarAccessory?: ReactElement<ComponentProps<typeof List.Dropdown>>;
+  // Taken from the component rather than rebuilt from List.Dropdown: an equivalent-looking
+  // ReactElement<DropdownProps> is not assignable to it under newer @types/react.
+  searchBarAccessory?: ComponentProps<typeof List>["searchBarAccessory"];
   /** Restricts the rows without hiding the instance sections, used by the ApplicationSet view. */
   filter?: (app: AppSummary) => boolean;
   emptyTitle?: string;
