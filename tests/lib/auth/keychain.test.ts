@@ -7,6 +7,7 @@ import {
   readTokenArgs,
   writeKeychainToken,
   writeTokenArgs,
+  writeTokenInput,
   type Exec,
 } from "../../../src/lib/auth/keychain";
 
@@ -61,15 +62,97 @@ describe("readKeychainToken", () => {
   });
 });
 
+/**
+ * Behaves like the real /usr/bin/security: `add-generic-password -w` with no value prompts
+ * twice, and if it does not get the same value twice it stores an empty password and still
+ * exits 0. Reproducing that is the only way a test can catch the bug it caused.
+ */
+function fakeSecurity() {
+  const store = new Map<string, string>();
+  const exec: Exec = vi.fn(async (_file, args, opts) => {
+    const account = args[args.indexOf("-a") + 1] ?? "";
+    if (args[0] === "add-generic-password") {
+      const lines = (opts?.input ?? "").split("\n");
+      const first = lines[0] ?? "";
+      const second = lines[1] ?? "";
+      store.set(account, first === second && first.length > 0 ? first : "");
+      const stderr = first === second ? "" : "passwords don't match\n";
+      return { stdout: "", stderr, code: 0 };
+    }
+    if (args[0] === "find-generic-password") {
+      const value = store.get(account);
+      return value === undefined
+        ? { stdout: "", stderr: "not found", code: 44 }
+        : { stdout: `${value}\n`, stderr: "", code: 0 };
+    }
+    if (args[0] === "delete-generic-password") {
+      const existed = store.delete(account);
+      return { stdout: "", stderr: "", code: existed ? 0 : 44 };
+    }
+    return { stdout: "", stderr: "unexpected", code: 1 };
+  });
+  return { exec, store };
+}
+
+describe("writeTokenInput", () => {
+  it("feeds the value twice, because security -w prompts twice", () => {
+    expect(writeTokenInput(SECRET)).toBe(`${SECRET}\n${SECRET}\n`);
+  });
+});
+
 describe("writeKeychainToken", () => {
-  it("passes the token on stdin, not in argv", async () => {
-    const spy = exec({});
-    await writeKeychainToken("i1", SECRET, spy);
-    expect(spy).toHaveBeenCalledWith("/usr/bin/security", writeTokenArgs("i1"), { input: SECRET });
+  it("actually stores the token, verified by reading it back", async () => {
+    const { exec, store } = fakeSecurity();
+    await writeKeychainToken("i1", SECRET, exec);
+    expect(store.get("i1")).toBe(SECRET);
+    await expect(readKeychainToken("i1", exec)).resolves.toBe(SECRET);
   });
 
-  it("throws when security fails", async () => {
-    await expect(writeKeychainToken("i1", SECRET, exec({ code: 1 }))).rejects.toThrowError(/exit 1/);
+  it("passes the token on stdin, never in argv", async () => {
+    const { exec } = fakeSecurity();
+    await writeKeychainToken("i1", SECRET, exec);
+    const [, args, opts] = (exec as unknown as { mock: { calls: [string, string[], { input?: string }?][] } })
+      .mock.calls[0]!;
+    expect(args).not.toContain(SECRET);
+    expect(opts?.input).toContain(SECRET);
+  });
+
+  it("throws when security exits 0 having stored nothing", async () => {
+    // The real failure: one prompt fed, "passwords don't match", empty password, exit 0.
+    const { store } = fakeSecurity();
+    const halfFeeding: Exec = vi.fn(async (_file, args) => {
+      const account = args[args.indexOf("-a") + 1] ?? "";
+      if (args[0] === "add-generic-password") {
+        store.set(account, "");
+        return { stdout: "", stderr: "passwords don't match", code: 0 };
+      }
+      return { stdout: "\n", stderr: "", code: 0 };
+    });
+    await expect(writeKeychainToken("i1", SECRET, halfFeeding)).rejects.toThrowError(/did not store/);
+  });
+
+  it("throws when security fails outright", async () => {
+    const failing: Exec = vi.fn().mockResolvedValue({ stdout: "", stderr: "", code: 1 });
+    await expect(writeKeychainToken("i1", SECRET, failing)).rejects.toThrowError(/exit 1/);
+  });
+
+  it("refuses a token carrying a line break, which would corrupt the second prompt", async () => {
+    const { exec } = fakeSecurity();
+    await expect(writeKeychainToken("i1", `${SECRET}\nmore`, exec)).rejects.toThrowError(/line break/);
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it("refuses an empty token", async () => {
+    const { exec } = fakeSecurity();
+    await expect(writeKeychainToken("i1", "", exec)).rejects.toThrowError(/empty/);
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it("round-trips through delete", async () => {
+    const { exec } = fakeSecurity();
+    await writeKeychainToken("i1", SECRET, exec);
+    await deleteKeychainToken("i1", exec);
+    await expect(readKeychainToken("i1", exec)).resolves.toBeUndefined();
   });
 });
 

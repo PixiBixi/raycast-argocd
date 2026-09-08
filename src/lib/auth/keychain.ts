@@ -23,11 +23,21 @@ export function readTokenArgs(instanceId: string): string[] {
 }
 
 /**
- * The token is deliberately absent from argv: everything in argv is visible to any process
- * that can run `ps`. It is written through stdin instead, using the `-w` form with no value.
+ * The token is deliberately absent from argv: everything in argv is visible to any process that
+ * can run `ps`. It is written through stdin instead, using the `-w` form with no value.
+ *
+ * That form prompts twice, "password data for new item" then "retype password for new item", so
+ * the value has to be fed twice. Feeding it once makes `security` print "passwords don't match",
+ * store an empty password, and still exit 0, which is why writeKeychainToken reads the value
+ * back rather than trusting the exit code.
  */
 export function writeTokenArgs(instanceId: string): string[] {
   return ["add-generic-password", "-U", "-s", KEYCHAIN_SERVICE, "-a", instanceId, "-w"];
+}
+
+/** What has to go on stdin for the two prompts `security -w` issues. */
+export function writeTokenInput(token: string): string {
+  return `${token}\n${token}\n`;
 }
 
 export function deleteTokenArgs(instanceId: string): string[] {
@@ -54,9 +64,27 @@ export async function readKeychainToken(instanceId: string, exec: Exec): Promise
 }
 
 export async function writeKeychainToken(instanceId: string, token: string, exec: Exec): Promise<void> {
-  const result = await exec(SECURITY_BINARY, writeTokenArgs(instanceId), { input: token });
+  // A newline would terminate one of the two prompts early and corrupt the stored value. No
+  // bearer token contains one, so this is a bug or a bad paste, not something to paper over.
+  if (/[\r\n]/.test(token)) {
+    throw new Error("The token contains a line break, so it cannot be stored. Paste it as one line.");
+  }
+  if (token.length === 0) {
+    throw new Error("Refusing to store an empty token.");
+  }
+
+  const result = await exec(SECURITY_BINARY, writeTokenArgs(instanceId), {
+    input: writeTokenInput(token),
+  });
   if (result.code !== 0) {
     throw failure("write", result.code, result.stderr);
+  }
+
+  // `security` exits 0 even when it stored nothing, so the exit code is not evidence. The only
+  // proof the write worked is reading the value back.
+  const stored = await readKeychainToken(instanceId, exec);
+  if (stored !== token) {
+    throw new Error("The keychain did not store the token. Nothing was saved.");
   }
 }
 

@@ -225,7 +225,19 @@ function TokenForm({ instance }: { instance: ArgoInstance }) {
                 await showToast({ style: Toast.Style.Failure, title: "The token is empty" });
                 return;
               }
-              await writeKeychainToken(instance.id, trimmed, execFileAsync);
+              try {
+                // writeKeychainToken reads the value back before it returns, so reaching this
+                // toast means the keychain really holds the token. `security` exits 0 even when
+                // it stored nothing, so an earlier version announced success on an empty write.
+                await writeKeychainToken(instance.id, trimmed, execFileAsync);
+              } catch (error) {
+                await showToast({
+                  style: Toast.Style.Failure,
+                  title: "The token was not stored",
+                  message: (error as Error).message,
+                });
+                return;
+              }
               await showToast({ style: Toast.Style.Success, title: "Token stored in the keychain" });
               pop();
             }}
