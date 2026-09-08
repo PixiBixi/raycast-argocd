@@ -86,7 +86,7 @@ jobs:
           retention-days: 7
 
   secrets:
-    name: No leaked cluster identity
+    name: No leaked identity or personal data
     runs-on: ubuntu-24.04
     steps:
       - name: Harden the runner
