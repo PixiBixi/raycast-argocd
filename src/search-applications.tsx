@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { instanceHost, type ArgoInstance } from "./lib/config/instances";
 import { InstanceForm } from "./ui/InstanceForm";
 import { ApplicationListView } from "./ui/ApplicationListView";
-import { ssoLogin } from "./ui/deps";
+import { ssoLogin, writeSsoSession } from "./ui/deps";
+import { loginWithSso } from "./ui/oidcLogin";
 import { readPreferences } from "./ui/preferences";
 import { loadInstances, loadRecentKeys, loadScope, saveInstances, saveScope } from "./ui/storage";
 import { useApplications } from "./ui/useApplications";
@@ -45,18 +46,25 @@ export default function SearchApplications() {
       const host = instanceHost(instance);
       const toast = await showToast({
         style: Toast.Style.Animated,
-        title: `Logging in to ${host}`,
-        message: "Finish the login in your browser.",
+        title: `Signing in to ${host}`,
+        message: "Finish the sign-in in your browser.",
       });
       try {
-        await ssoLogin(host);
+        // The two modes need different logins, and offering the wrong one is how an earlier
+        // version told a keychain instance to run an SSO flow that could not help it.
+        if (instance.authMode === "sso") {
+          const { session } = await loginWithSso(instance);
+          await writeSsoSession(instance.id, session);
+        } else {
+          await ssoLogin(host);
+        }
         toast.style = Toast.Style.Success;
-        toast.title = `Logged in to ${host}`;
+        toast.title = `Signed in to ${host}`;
         toast.message = undefined;
         refresh(instance.id);
       } catch (error) {
         toast.style = Toast.Style.Failure;
-        toast.title = "SSO login did not complete";
+        toast.title = "Sign-in did not complete";
         toast.message = (error as Error).message;
       }
     },

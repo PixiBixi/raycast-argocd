@@ -10,7 +10,12 @@
 
 export type Environment = "prod" | "preprod" | "dev";
 
-export type AuthMode = "cli" | "token";
+/**
+ * `sso` runs the OIDC login from the extension and renews silently from the refresh token,
+ * which is the only mode that never asks for anything again. `cli` reuses whatever session the
+ * argocd binary holds. `token` reads a token from the keychain.
+ */
+export type AuthMode = "sso" | "cli" | "token";
 
 export interface ArgoInstance {
   id: string;
@@ -43,7 +48,7 @@ export class ValidationError extends Error {
 }
 
 const ENVIRONMENTS: readonly Environment[] = ["prod", "preprod", "dev"];
-const AUTH_MODES: readonly AuthMode[] = ["cli", "token"];
+const AUTH_MODES: readonly AuthMode[] = ["sso", "cli", "token"];
 
 export function normalizeBaseUrl(raw: string): string {
   const trimmed = raw.trim();

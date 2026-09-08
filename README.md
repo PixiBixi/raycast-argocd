@@ -76,95 +76,82 @@ committed to this repository.
 
 ## Authentication
 
-Two modes, neither of which asks you to trust this extension with a password. Which one you can
-use depends on one thing: whether your identity provider accepts the `argocd` CLI's loopback
-redirect.
+Three modes. Only one of them never asks you for anything again, and it is the default.
 
-### Check that first
+### Single sign-on, renewed silently
 
-`argocd login <host> --sso` serves its OIDC callback on `http://localhost:8085/auth/callback`.
-That URI has to be registered as a login redirect URI on the OIDC client ArgoCD is configured
-with (`oidc.config.clientID` in `argocd-cm`, or `oidc.cliClientID` if it is set). Many
-deployments only register the web UI's own callback, in which case the CLI login fails at the
-identity provider with `The 'redirect_uri' parameter must be a Login redirect URI in the client
-app settings`.
+The extension runs the OIDC authorization code flow with PKCE against your identity provider,
+in a browser, once. The provider returns a refresh token alongside the id token, and from then
+on every request that needs a token mints a fresh one from it, ahead of expiry, with no prompt
+and no toast. Nothing is ever pasted, and nothing expires that you have to notice.
 
-Test it in ten seconds:
+Renewal happens before expiry rather than on a 401, deliberately: a 401 is something you see
+and retry, a renewal thirty seconds early is something you never do.
+
+The session lives in the macOS keychain under the service `raycast-argocd`, in its own account
+per instance. `Manage Instances` shows `signed in` or `sign in needed` per instance, so the
+state is visible before it fails.
+
+**It needs a public OIDC client.** ArgoCD's own web client is confidential, meaning it has a
+secret, and an identity provider refuses a token exchange on it from a client that cannot
+present one: the exchange comes back `invalid_client`. ArgoCD provides `oidc.cliClientID` in
+`argocd-cm` for exactly this case, and `/api/v1/settings` exposes it, which is where the
+extension reads it from. Nothing about the provider is configured in the extension.
+
+So, once, with whoever administers your identity provider:
+
+1. Create an OIDC client of type **Native** or public: no secret, PKCE required, token endpoint
+   authentication method `none`. Grants: `authorization_code` and `refresh_token`. Redirect URI
+   `http://localhost:8085/auth/callback`. Assign it to the same group as the ArgoCD app.
+2. Set `oidc.cliClientID: <the new client id>` in `argocd-cm`, on each instance.
+
+The port and path match what `argocd login --sso` uses, so that one redirect URI serves the CLI
+and this extension both, and nobody has to register a second one.
+
+Then, in the extension: **Log in with single sign-on** from Manage Instances. The browser opens
+once. That is the last time you are asked.
+
+If the client is not public, the extension says so in as many words rather than failing
+obscurely, and names `oidc.cliClientID` as the fix.
+
+### argocd CLI session
+
+Reuses whatever session the `argocd` binary already holds in `~/.config/argocd/config`, for
+instances where the public client above is not set up. It needs the same redirect URI
+registered, so if that is done, prefer single sign-on: the CLI mode has no silent renewal of its
+own here.
+
+Log in with:
 
 ```sh
 argocd login argocd.example.com --sso --grpc-web
 ```
 
-If the browser shows that error, you have two ways forward: ask whoever administers the OIDC
-client to add `http://localhost:8085/auth/callback` to its login redirect URIs, or set
-`oidc.cliClientID` in `argocd-cm` to a client that already has it. Until then, use the API token
-mode.
-
-### argocd CLI session
-
-The best mode when the loopback redirect is registered, because the token lifecycle stays owned
-by the tool that already owns it. The CLI runs the OIDC PKCE flow and stores the bearer token in
-`~/.config/argocd/config` (mode 0600). The extension reads that file, matches the `users[]` entry
-against the instance host, and uses the token. Nothing new is registered with your identity
-provider, no client secret lives in the extension, and no credential is written by it.
-
-Verify a session exists for the host itself:
-
-```sh
-argocd account get-user-info --server argocd.example.com --grpc-web
-```
-
-A config that only lists `kubernetes` (left by `argocd --core`) or `localhost:8080` (left by a
-port-forward) has no session for the host, and the extension will say so.
-
-When the token expires, typically after an hour, the extension offers a **Log in with SSO**
-action that re-runs the login and waits for the new token.
+A config that only lists `kubernetes` (left by `argocd --core`) or `localhost:8080` (a
+port-forward) has no session for the host itself, which is the usual shape when the CLI has only
+ever been used in core mode. Being logged in to `gcloud` or having a working `kubectl` is
+unrelated: those authenticate to the cluster, not to ArgoCD.
 
 ### API token in the keychain
 
-The mode that needs nothing from your identity provider.
+The mode that needs nothing from your identity provider, and the one to leave behind once the
+public client exists: an API token has to be created, and eventually recreated, by hand.
 
 ```sh
-argocd account generate-token --account <account-name> --server argocd.example.com --grpc-web
+argocd account generate-token --account <account-with-apiKey> --server argocd.example.com --grpc-web
 ```
 
-That command needs a session of its own, so if the CLI login is what is blocked, generate the
-token from the ArgoCD web UI instead: log in through your identity provider, then Settings,
-Accounts, pick an account that has the `apiKey` capability and generate a token. As a stopgap,
-the `argocd.token` cookie of a logged-in web session is itself a valid bearer token, with that
-session's lifetime.
+Without `--expires-in` the token does not expire, which is what makes this bearable. That
+command needs a session of its own, so if the CLI login is what is blocked, bootstrap it from
+the web session: log in to the ArgoCD web UI, copy the `argocd.token` cookie, and pass it as
+`--auth-token`. The cookie is itself a valid bearer token, with that session's lifetime.
 
-### Bootstrapping a token when the CLI login is blocked
+Generating a token **writes to the server**: the token id is stored in `argocd-secret`. On an
+instance you are only supposed to read, do not run it.
 
-`argocd account generate-token` needs a session of its own, which is the thing you do not have.
-The way out is the web session: log in to the ArgoCD web UI through your identity provider, open
-the developer tools, and copy the `argocd.token` cookie. That cookie **is** a valid bearer
-token, so it can be used directly:
-
-```sh
-argocd account generate-token \
-  --server argocd.example.com --grpc-web \
-  --auth-token "<the argocd.token cookie>" \
-  --account <account-with-apiKey>
-```
-
-That yields a long-lived token, and you only ever do it once per instance.
-
-Two things to know before you run it:
-
-- The account has to be listed in `argocd-cm` under `accounts.<name>` with the `apiKey`
-  capability, and your own RBAC has to allow `accounts, update` on it.
-- **It writes to the server.** The token id is stored in `argocd-secret`, so on an instance you
-  are only supposed to read, do not run it. Use the `argocd.token` cookie itself as the token
-  instead and accept that it expires with the web session, or get the CLI loopback redirect
-  registered so the CLI session mode works with no write at all.
-
-### Storing it
-
-Set the instance's authentication mode to `API token in the keychain`, then use **Set API
-token**. The token goes into the macOS keychain under the service `raycast-argocd`, keyed by the
-instance id. It is never written to Raycast's storage, which is not encrypted, and never logged
-or copied to the clipboard.
+Set the instance's mode to `API token in the keychain`, then use **Set API token**. The token
+goes into the macOS keychain under `raycast-argocd`, keyed by the instance id, never into
+Raycast's storage, and never into a log or the clipboard.
 
 It is passed to `/usr/bin/security` in the argument list, which is worth stating rather than
 glossing over. `security add-generic-password` cannot read a password from a file descriptor;
@@ -175,10 +162,10 @@ running as the same user, which is the boundary that already governs the stored 
 `security find-generic-password -w` hands it to any same-uid process without a prompt. macOS
 does not expose another user's arguments without root.
 
-The write is verified by reading the value back before success is reported, so a write that did
-not land fails loudly instead of showing a success toast.
+Every write is verified by reading the value back before success is reported, so a write that
+did not land fails loudly instead of showing a success toast.
 
-Inspect or remove it yourself with:
+Inspect or remove what is stored with:
 
 ```sh
 security find-generic-password -s raycast-argocd -a <instance-id> -w

@@ -21,7 +21,7 @@ export function InstanceForm({ instances, editing, onSaved }: Props) {
   const [name, setName] = useState(editing?.name ?? "");
   const [baseUrl, setBaseUrl] = useState(editing?.baseUrl ?? "");
   const [env, setEnv] = useState<Environment>(editing?.env ?? "dev");
-  const [authMode, setAuthMode] = useState<AuthMode>(editing?.authMode ?? "cli");
+  const [authMode, setAuthMode] = useState<AuthMode>(editing?.authMode ?? "sso");
   const [allowWrite, setAllowWrite] = useState(editing?.allowWrite ?? false);
   const [enabled, setEnabled] = useState(editing?.enabled ?? true);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
@@ -107,11 +107,18 @@ export function InstanceForm({ instances, editing, onSaved }: Props) {
         title="Authentication"
         value={authMode}
         onChange={(value) => setAuthMode(value as AuthMode)}
-        info="CLI session reuses the token that argocd login <host> --sso already stored, and needs your identity provider to accept the CLI loopback redirect http://localhost:8085/auth/callback. API token reads a token from the macOS keychain and needs nothing from the identity provider. See the README."
+        info="Single sign-on logs in once in a browser and renews itself from the refresh token, so nothing is ever asked again. It needs a public OIDC client, which ArgoCD takes from oidc.cliClientID. The other two modes exist for instances where that is not set. See the README."
       >
-        <Form.Dropdown.Item value="cli" title="argocd CLI session (SSO)" icon={Icon.Person} />
+        <Form.Dropdown.Item value="sso" title="Single sign-on, renewed silently" icon={Icon.Fingerprint} />
+        <Form.Dropdown.Item value="cli" title="argocd CLI session" icon={Icon.Terminal} />
         <Form.Dropdown.Item value="token" title="API token in the keychain" icon={Icon.Key} />
       </Form.Dropdown>
+      {authMode === "sso" ? (
+        <Form.Description
+          title="After saving"
+          text="Use Log in with single sign-on from Manage Instances. The browser opens once, and from then on the session renews itself before every request that needs it."
+        />
+      ) : null}
       <Form.Separator />
       <Form.Checkbox
         id="allowWrite"

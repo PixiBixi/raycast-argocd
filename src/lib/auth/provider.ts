@@ -1,6 +1,11 @@
 /**
  * Resolves the bearer token for an instance, from whichever store its auth mode names.
  *
+ * The `sso` mode is the one that matters: it renews the token from the refresh token before
+ * every request that needs it, so the operator logs in once in a browser and is never asked
+ * again. Renewal happens ahead of expiry rather than on a 401, because a 401 is something the
+ * operator sees and a renewal thirty seconds early is something they never do.
+ *
  * Every failure is an AuthError carrying the instance and the host, because the only useful
  * recovery is "log in to that host", and the UI needs both to offer it. No message ever
  * carries the token itself.
@@ -24,6 +29,8 @@ export class AuthError extends Error {
 export interface TokenProviderDeps {
   readCliToken: (host: string) => Promise<CliToken | undefined>;
   readKeychainToken: (instanceId: string) => Promise<string | undefined>;
+  /** Reads the stored SSO session, renewing it silently when it is close to lapsing. */
+  readSsoToken?: (instance: ArgoInstance) => Promise<string>;
   now: () => Date;
 }
 
@@ -32,6 +39,17 @@ export type TokenProvider = (instance: ArgoInstance) => Promise<string>;
 export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
   return async (instance) => {
     const host = instanceHost(instance);
+
+    if (instance.authMode === "sso") {
+      if (!deps.readSsoToken) {
+        throw new AuthError(
+          `Single sign-on is not wired up in this context for ${instance.name}.`,
+          instance.id,
+          host,
+        );
+      }
+      return deps.readSsoToken(instance);
+    }
 
     if (instance.authMode === "token") {
       const token = await deps.readKeychainToken(instance.id);

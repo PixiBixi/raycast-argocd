@@ -17,6 +17,8 @@ import { UNKNOWN_REACHABILITY, type Reachability } from "./lib/argocd/probe";
 import { instanceHost, removeInstance, upsertInstance, type ArgoInstance } from "./lib/config/instances";
 import { deleteKeychainToken, readKeychainToken, writeKeychainToken } from "./lib/auth/keychain";
 import { InstanceForm } from "./ui/InstanceForm";
+import { loginWithSso } from "./ui/oidcLogin";
+import { clearSsoSession, readSsoSession, writeSsoSession } from "./ui/deps";
 import { execFileAsync, probe, ssoLogin } from "./ui/deps";
 import { loadInstances, loadReachability, saveInstances, saveReachability } from "./ui/storage";
 import { environmentColor, reachabilityIcon, reachabilityText } from "./ui/statusVisuals";
@@ -25,11 +27,25 @@ export default function ManageInstances() {
   const { push } = useNavigation();
   const [instances, setInstances] = useState<ArgoInstance[]>([]);
   const [reachability, setReachability] = useState<Record<string, Reachability>>({});
+  /** Whether each single sign-on instance currently holds a session that can be renewed. */
+  const [signedIn, setSignedIn] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
 
   const persist = useCallback(async (next: ArgoInstance[]) => {
     await saveInstances(next);
     setInstances(next);
+  }, []);
+
+  const refreshSessions = useCallback(async (targets: ArgoInstance[]) => {
+    const entries = await Promise.all(
+      targets
+        .filter((instance) => instance.authMode === "sso")
+        .map(async (instance) => {
+          const session = await readSsoSession(instance.id).catch(() => undefined);
+          return [instance.id, session?.refreshToken !== undefined] as const;
+        }),
+    );
+    setSignedIn(Object.fromEntries(entries));
   }, []);
 
   const checkAll = useCallback(async (targets: ArgoInstance[]) => {
@@ -47,9 +63,10 @@ export default function ManageInstances() {
       setInstances(stored);
       setReachability(await loadReachability());
       setLoading(false);
+      await refreshSessions(stored);
       await checkAll(stored);
     })();
-  }, [checkAll]);
+  }, [checkAll, refreshSessions]);
 
   async function remove(instance: ArgoInstance) {
     const confirmed = await confirmAlert({
@@ -65,6 +82,39 @@ export default function ManageInstances() {
     // The keychain entry has no other owner, so it goes with the instance.
     await deleteKeychainToken(instance.id, execFileAsync).catch(() => undefined);
     await showToast({ style: Toast.Style.Success, title: `Removed ${instance.name}` });
+  }
+
+  /**
+   * The browser login. It runs once per instance; everything after it is silent, which is the
+   * whole reason this mode exists.
+   */
+  async function loginSso(instance: ArgoInstance) {
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: `Signing in to ${instance.name}`,
+      message: "Finish the sign-in in your browser.",
+    });
+    try {
+      const { session, settings } = await loginWithSso(instance);
+      await writeSsoSession(instance.id, session);
+      toast.style = Toast.Style.Success;
+      toast.title = `Signed in to ${instance.name}`;
+      toast.message = settings.usesCliClient
+        ? "The session will renew itself from now on."
+        : "Signed in through the web client. If renewal fails, set oidc.cliClientID in argocd-cm.";
+      await refreshSessions(instances);
+      await checkAll([instance]);
+    } catch (error) {
+      toast.style = Toast.Style.Failure;
+      toast.title = "Sign-in did not complete";
+      toast.message = (error as Error).message;
+    }
+  }
+
+  async function signOut(instance: ArgoInstance) {
+    await clearSsoSession(instance.id);
+    await refreshSessions(instances);
+    await showToast({ style: Toast.Style.Success, title: `Signed out of ${instance.name}` });
   }
 
   async function login(instance: ArgoInstance) {
@@ -120,6 +170,21 @@ export default function ManageInstances() {
                 },
               },
               { tag: { value: instance.env, color: environmentColor(instance.env) } },
+              ...(instance.authMode === "sso"
+                ? [
+                    {
+                      // A session with a refresh token needs nothing further; without one the
+                      // operator has to sign in, and that is worth seeing before it fails.
+                      tag: {
+                        value: signedIn[instance.id] ? "signed in" : "sign in needed",
+                        color: signedIn[instance.id] ? Color.Green : Color.Orange,
+                      },
+                      tooltip: signedIn[instance.id]
+                        ? "The session renews itself silently."
+                        : "No renewable session yet. Use Log in with single sign-on.",
+                    },
+                  ]
+                : []),
               ...(instance.enabled ? [] : [{ tag: { value: "excluded", color: Color.SecondaryText } }]),
             ]}
             actions={
@@ -147,6 +212,21 @@ export default function ManageInstances() {
                   />
                 </ActionPanel.Section>
                 <ActionPanel.Section title="Authentication">
+                  {instance.authMode === "sso" ? (
+                    <Action
+                      title="Log in with Single Sign-On"
+                      icon={Icon.Fingerprint}
+                      onAction={() => void loginSso(instance)}
+                    />
+                  ) : null}
+                  {instance.authMode === "sso" ? (
+                    <Action
+                      title="Sign out"
+                      icon={Icon.Logout}
+                      style={Action.Style.Destructive}
+                      onAction={() => void signOut(instance)}
+                    />
+                  ) : null}
                   {instance.authMode === "cli" ? (
                     <Action
                       title="Log in with SSO"

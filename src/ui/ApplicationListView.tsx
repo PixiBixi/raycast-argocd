@@ -119,21 +119,26 @@ export function ApplicationListView({
         actions={
           <ActionPanel>
             {failing.map((state) =>
-              // SSO login only helps an instance that reads the argocd CLI session. On a
-              // keychain instance the fix is to store a token, so that is what is offered.
-              state.instance.authMode === "cli" ? (
-                <Action
-                  key={state.instance.id}
-                  title={`Log in to ${instanceHost(state.instance)}`}
-                  icon={Icon.Person}
-                  onAction={() => onLogin(state.instance)}
-                />
-              ) : (
+              // The offered action has to match the instance's mode: a browser sign-in for
+              // single sign-on, a CLI login for the CLI session, and storing a token for the
+              // keychain, where neither login helps.
+              state.instance.authMode === "token" ? (
                 <Action.Open
                   key={state.instance.id}
                   title={`Set the API Token for ${state.instance.name}`}
                   icon={Icon.Key}
                   target="raycast://extensions/pixibixi/argocd/manage-instances"
+                />
+              ) : (
+                <Action
+                  key={state.instance.id}
+                  title={
+                    state.instance.authMode === "sso"
+                      ? `Sign in to ${instanceHost(state.instance)}`
+                      : `Log in to ${instanceHost(state.instance)}`
+                  }
+                  icon={state.instance.authMode === "sso" ? Icon.Fingerprint : Icon.Person}
+                  onAction={() => onLogin(state.instance)}
                 />
               ),
             )}

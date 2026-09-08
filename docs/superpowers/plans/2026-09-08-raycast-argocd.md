@@ -1425,3 +1425,53 @@ failed instance with `instance.problem?.includes("VPN")`, matching on words in a
 error type is the actual information, so `classifyProblem` derives a
 `ProblemKind` of `unreachable`, `auth` or `other` from the error class, and the summary carries
 it. Same family as the bugs above: an inference standing in for the fact.
+
+### A11: single sign-on with silent renewal
+
+The reported problem was blunt and correct: "copier coller un token tous les N jours c'est pas
+viable". It is not an authentication method, it is a chore with a deadline.
+
+**What was established before writing anything**, since the last three bugs all came from
+assuming a server does what its schema suggests:
+
+- Okta's discovery document lists `refresh_token` among its grants, `offline_access` among its
+  scopes, `none` among its token endpoint auth methods, and `S256` as a code challenge method.
+  So a public-client PKCE flow with silent renewal is supported by the provider.
+- It also advertises the device authorization grant, which needs no redirect URI at all. Tested
+  against ArgoCD's client: `invalid_client`. The client is confidential, so neither the device
+  flow nor a loopback PKCE exchange can use it without a secret.
+- ArgoCD's `/api/v1/settings` already exposes a `cliClientID` field, currently null. That is the
+  supported way to point command-line and third-party logins at a public client, and it is
+  evidence rather than inference: the field is in the live response.
+
+Conclusion: no flow avoids one identity provider change. The smallest and most durable is a
+dedicated public client plus `oidc.cliClientID`, and the extension is built to use it the moment
+it exists, with the loopback port and path matching `argocd login --sso` so one redirect URI
+serves both.
+
+**New modules, all pure and tested without a network, a browser or a clock:**
+
+- `lib/auth/oidc.ts`: discovery, PKCE, the authorization URL, the callback parse, the code
+  exchange and the refresh. 33 test cases, including that the verifier never appears in the
+  authorization request, that no `client_secret` is ever sent, that the `exp` claim wins over
+  `expires_in` because the latter is relative to a clock we do not share, and that
+  `invalid_client` is reported as the configuration problem it is rather than a login failure.
+- `lib/auth/session.ts`: the stored session and the renewal decision. Renewal happens ahead of
+  expiry rather than on a 401, because a 401 is something the operator sees. An expired id token
+  is explicitly _not_ a reason to ask for a login while a refresh token exists, which is the
+  property the whole feature rests on.
+- `lib/argocd/settings.ts`: the instance's own OIDC configuration, read unauthenticated, which
+  is what makes a first login possible and keeps all provider configuration out of the
+  extension.
+- `lib/auth/sso.ts`: the policy. A live session returns with no request at all; a lapsing one is
+  renewed and stored; a refused refresh token is discarded so the same failure is not retried on
+  every request; a provider outage keeps it, being worth retrying; a session minted against
+  another issuer or client is voided rather than producing a puzzling 401.
+- `ui/oidcLogin.ts`: the only untestable part, a loopback listener on 127.0.0.1:8085 and a
+  browser. It refuses to report success without a refresh token, since without one this mode is
+  no better than pasting.
+
+`sso` is now the default mode for a new instance, and Manage Instances shows `signed in` or
+`sign in needed` per instance so the state is visible before it fails. The login action offered
+anywhere in the UI matches the instance's mode, since offering an SSO flow to a keychain
+instance was an earlier version's mistake.

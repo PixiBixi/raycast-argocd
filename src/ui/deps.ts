@@ -10,10 +10,14 @@ import { spawn } from "node:child_process";
 import { environment } from "@raycast/api";
 import { join } from "node:path";
 import { ArgoClient, type ClientDeps } from "../lib/argocd/client";
+import { fetchOidcSettings } from "../lib/argocd/settings";
+import { discover, refreshTokens } from "../lib/auth/oidc";
+import { parseSession, serializeSession, sessionAccount, type SsoSession } from "../lib/auth/session";
+import { createSsoTokenReader } from "../lib/auth/sso";
 import { probeInstance, type Reachability } from "../lib/argocd/probe";
 import { ProjectionCache } from "../lib/cache/store";
 import { readCliToken } from "../lib/auth/cliConfig";
-import { readKeychainToken, type Exec } from "../lib/auth/keychain";
+import { deleteKeychainToken, readKeychainToken, writeKeychainToken, type Exec } from "../lib/auth/keychain";
 import { createTokenProvider } from "../lib/auth/provider";
 import { runSsoLogin } from "../lib/auth/login";
 import type { ArgoInstance } from "../lib/config/instances";
@@ -45,9 +49,38 @@ export const execFileAsync: Exec = (file, args, opts) =>
     }
   });
 
+/**
+ * The SSO session lives in the keychain beside the API token, under its own account, and is
+ * renewed here rather than anywhere the operator can see. Nothing about the provider is
+ * hardcoded: it all comes from the instance's own settings endpoint.
+ */
+export async function readSsoSession(instanceId: string): Promise<SsoSession | undefined> {
+  return parseSession(await readKeychainToken(sessionAccount(instanceId), execFileAsync));
+}
+
+export async function writeSsoSession(instanceId: string, session: SsoSession): Promise<void> {
+  await writeKeychainToken(sessionAccount(instanceId), serializeSession(session), execFileAsync);
+}
+
+export async function clearSsoSession(instanceId: string): Promise<void> {
+  await deleteKeychainToken(sessionAccount(instanceId), execFileAsync);
+}
+
+const readSsoToken = createSsoTokenReader({
+  readSession: readSsoSession,
+  writeSession: writeSsoSession,
+  clearSession: clearSsoSession,
+  readSettings: (instance) => fetchOidcSettings(instance.baseUrl, { fetch: globalThis.fetch }),
+  discover: (issuer) => discover(issuer, { fetch: globalThis.fetch }),
+  refresh: (endpoints, clientId, refreshToken, scopes) =>
+    refreshTokens({ endpoints, clientId, refreshToken, scopes }, { fetch: globalThis.fetch, now: Date.now }),
+  now: () => Date.now(),
+});
+
 export const getToken = createTokenProvider({
   readCliToken: (host) => readCliToken(host),
   readKeychainToken: (instanceId) => readKeychainToken(instanceId, execFileAsync),
+  readSsoToken,
   now: () => new Date(),
 });
 
