@@ -1398,3 +1398,30 @@ unreadable. Every table in the detail markdown is now one fact per line.
 **Also fixed:** the "Last sync messages" section listed every resource carrying a message, which
 on a successful sync means every resource, each saying `serverside-applied`. It now lists only
 resources whose status is `SyncFailed` or whose hook phase failed, and is absent otherwise.
+
+### A10: the menu bar command, and one read path instead of two
+
+The spec listed a menu bar command as a non-goal, on the grounds that polling every instance
+multiplies the cost of the scale constraint. That reasoning no longer holds: the read path
+streams, so a refresh is around 3 MB gzipped per instance and peaks at 35 MB of heap, and the
+command is worth having for a second reason the original note missed. It keeps the on-disk cache
+warm, which is what makes the search command instant rather than merely fast.
+
+**One read path.** Rather than give the menu bar its own loader, the sequential probe-then-list
+logic moved out of `useApplications` into `src/ui/loadApplications.ts` as a plain async function
+with `onCached` and `onSettled` callbacks. The hook turns those into rendered state; the menu
+bar awaits the result. Two copies of that ordering, with its memory reasoning, would have
+drifted, and the ordering is the part that took four corrections to get right.
+
+**`src/lib/monitor/summary.ts`** holds the aggregation, kept pure because the decisions in it are
+editorial: degraded and missing are counted apart from out of sync, since one is broken now and
+the other is drift auto-sync may be about to fix; an application that is both counts once, as
+degraded; a suspended application counts as neither, being deliberate. The title leads with
+degraded, falls back to drift, and only reports an unreachable instance once nothing else is
+known to be wrong, because a real failure is more urgent than not knowing. 27 test cases.
+
+**One thing caught in review of my own code.** The first version routed the menu item for a
+failed instance with `instance.problem?.includes("VPN")`, matching on words in a message. The
+error type is the actual information, so `classifyProblem` derives a
+`ProblemKind` of `unreachable`, `auth` or `other` from the error class, and the summary carries
+it. Same family as the bugs above: an inference standing in for the fact.

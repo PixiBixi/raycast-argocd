@@ -10,6 +10,7 @@ the one you found. Built for instances holding thousands of applications behind 
 | Search Applications    | Searches every configured instance at once, or one of them. Renders from a local cache first, then refreshes behind you. |
 | Search ApplicationSets | Lists ApplicationSets with a rollup of the applications each one generated, and jumps to them.                           |
 | Manage Instances       | Adds, edits and removes instances, shows whether each is reachable, and handles the SSO login and API tokens.            |
+| ArgoCD Monitor         | A menu bar counter of what is degraded or out of sync across every instance. Also keeps the cache warm.                  |
 
 ## Install
 
@@ -23,6 +24,32 @@ npm run dev
 
 The three commands appear at the top of Raycast's root search. `Ctrl-C` stops the dev server and
 leaves the extension installed.
+
+## The menu bar
+
+`ArgoCD Monitor` runs every 10 minutes and does two jobs. It reports, and it refreshes the
+on-disk cache, which is what keeps `Search Applications` painting instantly the rest of the
+time. That is only affordable because the read path streams: around 3 MB gzipped per instance,
+projected element by element.
+
+The title is quiet by default:
+
+| Title                    | Meaning                                                      |
+| ------------------------ | ------------------------------------------------------------ |
+| nothing, just the icon   | everything healthy and synced                                |
+| `2 degraded, 5 drifting` | degraded leads, because one is broken and the other is drift |
+| `5 out of sync`          | nothing is degraded                                          |
+| `prod unreachable`       | shown only once nothing else is known to be wrong            |
+
+Turn on **When everything is healthy** in the command preferences to see the total instead of
+nothing. The tooltip always lists every instance with its counts.
+
+The menu lists the degraded applications first, then the out-of-sync ones, capped at 12 per
+section with the rest left to the search command. Selecting one opens it in ArgoCD.
+
+A background command cannot ask for a login, so an instance that fails is reported with the
+reason and an item that opens where it gets fixed, routed on the kind of failure. The last
+numbers it had stay on screen rather than the menu emptying.
 
 ## Adding an instance
 
