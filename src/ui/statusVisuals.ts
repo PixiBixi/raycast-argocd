@@ -77,7 +77,10 @@ export function environmentColor(env: Environment): Color {
 export function reachabilityIcon(reachability: Reachability): { source: Icon; tintColor: Color } {
   switch (reachability.state) {
     case "reachable":
-      return { source: Icon.CircleFilled, tintColor: Color.Green };
+      return {
+        source: Icon.CircleFilled,
+        tintColor: isProbeSuspicious(reachability) ? Color.Orange : Color.Green,
+      };
     case "unreachable":
       return { source: Icon.CircleFilled, tintColor: Color.Red };
     default:
@@ -87,20 +90,30 @@ export function reachabilityIcon(reachability: Reachability): { source: Icon; ti
 
 export function reachabilityText(reachability: Reachability): string {
   switch (reachability.state) {
-    case "reachable":
-      return (
-        [
-          reachability.version,
-          reachability.latencyMs === undefined ? undefined : `${reachability.latencyMs} ms`,
-        ]
-          .filter(Boolean)
-          .join(" in ") || "reachable"
-      );
+    case "reachable": {
+      const parts = [
+        reachability.version,
+        reachability.latencyMs === undefined ? undefined : `${reachability.latencyMs} ms`,
+      ].filter(Boolean);
+      const measured = parts.join(" in ") || "reachable";
+      // A reachable probe with a non-2xx status used to render as a bare latency, which is how
+      // a wrong probe path went unnoticed. The status is always shown now.
+      return reachability.reason ? `${measured}, ${reachability.reason}` : measured;
+    }
     case "unreachable":
       return `unreachable, check your VPN${reachability.reason ? ` (${reachability.reason})` : ""}`;
     default:
       return "not checked yet";
   }
+}
+
+/**
+ * A reachable instance that answered something other than 2xx, or answered without a version,
+ * is not healthy: it is a wrong URL, a proxy in the way, or a broken server. The dot turns
+ * amber so it never reads as "all good".
+ */
+export function isProbeSuspicious(reachability: Reachability): boolean {
+  return reachability.state === "reachable" && (reachability.reason !== undefined || !reachability.version);
 }
 
 /** "3 minutes ago", for a cache age. Rendered under every instance section. */

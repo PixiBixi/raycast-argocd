@@ -55,13 +55,17 @@ describe("probeInstance", () => {
     expect(result.checkedAt).toBeGreaterThan(0);
   });
 
-  it("targets the public version endpoint", async () => {
+  it("targets the unversioned version endpoint, which is where ArgoCD serves it", async () => {
     const calls: Recorded[] = [];
     await probeInstance(
       INSTANCE,
       deps(() => Response.json({ Version: "v3.5.1" }), calls),
     );
-    expect(calls[0]?.url).toBe("https://argocd.example.com/api/v1/version");
+    // /api/v1/version is a 404 on a real server, and a 404 still counts as reachable, so
+    // getting this path wrong reads as "reachable with no version" and says nothing. Hence an
+    // assertion on the exact path.
+    expect(calls[0]?.url).toBe("https://argocd.example.com/api/version");
+    expect(calls[0]?.url).not.toContain("/v1/");
   });
 
   it("never sends an Authorization header, so a 401 stays unambiguous", async () => {

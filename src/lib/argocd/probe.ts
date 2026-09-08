@@ -6,9 +6,13 @@
  * real answer is "you are not connected". One cheap probe up front turns that into a sub-second
  * answer, and lets the list render from cache with an honest explanation.
  *
- * GET /api/v1/version answers 200 without authentication on ArgoCD 3.x, which is exactly what
- * is wanted here: it proves the network path and the server without ever being confusable with
- * an authorisation result. Nothing in the UI treats a successful probe as an authorisation.
+ * GET /api/version answers 200 without authentication on ArgoCD 3.x, which is exactly what is
+ * wanted here: it proves the network path and the server without ever being confusable with an
+ * authorisation result. Nothing in the UI treats a successful probe as an authorisation.
+ *
+ * The path has no /v1: ArgoCD serves the version outside the versioned API, and /api/v1/version
+ * is a 404. That 404 still counts as reachable, which is correct but was silent, so a reachable
+ * probe now carries its non-2xx status in `reason` and the UI shows it.
  */
 
 import type { ArgoInstance } from "../config/instances";
@@ -39,12 +43,15 @@ export const UNKNOWN_REACHABILITY: Reachability = {
 
 export const DEFAULT_PROBE_TTL_MS = 30_000;
 
+/** Not /api/v1/version: ArgoCD serves the version outside the versioned API. */
+export const VERSION_PATH = "/api/version";
+
 export async function probeInstance(instance: ArgoInstance, deps: ProbeDeps): Promise<Reachability> {
   const startedAt = deps.now();
 
   let response: Response;
   try {
-    response = await deps.fetch(`${instance.baseUrl}/api/v1/version`, {
+    response = await deps.fetch(`${instance.baseUrl}${VERSION_PATH}`, {
       method: "GET",
       // Deliberately no Authorization header: this endpoint is public, and sending a token
       // here would make a 401 ambiguous between "wrong token" and "server unreachable".
