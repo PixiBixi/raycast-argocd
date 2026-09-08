@@ -1,10 +1,10 @@
 /**
  * The diff of what is out of sync.
  *
- * ArgoCD precomputes the `diff` string per resource, so nothing here diffs anything. The
- * managed-resources response is streamed and the live and target states are dropped on
- * projection, because on an application with many resources those two fields are the whole
- * payload.
+ * The diff is computed in `lib/argocd/project.ts` from the two states ArgoCD returns, because
+ * its own `diff` field is declared but not populated. The response is streamed and the states
+ * are dropped as soon as each resource is diffed, since on an application with many resources
+ * those fields are the whole payload.
  */
 
 import { Action, ActionPanel, Detail, Icon } from "@raycast/api";
@@ -26,25 +26,50 @@ function describe(diff: ResourceDiff): string {
   return `${diff.kind || "Resource"} ${identity}`;
 }
 
+function stats(diff: ResourceDiff): string {
+  if (diff.tooLarge) {
+    return "too large to diff";
+  }
+  const parts = [
+    diff.added > 0 ? `+${diff.added}` : undefined,
+    diff.removed > 0 ? `-${diff.removed}` : undefined,
+  ];
+  return parts.filter(Boolean).join(" ");
+}
+
 function render(diffs: ResourceDiff[] | undefined, isLoading: boolean, resource?: ResourceStatus): string {
   if (isLoading && !diffs) {
     return "Loading the diff...";
   }
 
-  const modified = (diffs ?? []).filter((diff) => diff.modified && diff.diff.trim().length > 0);
+  const modified = (diffs ?? []).filter((diff) => diff.modified);
   if (modified.length === 0) {
     return [
-      resource ? `# ${resource.kind} ${resource.name}` : "# No diff",
+      resource ? `# ${resource.kind} ${resource.name}` : "# No difference",
       "",
       diffs && diffs.length > 0
-        ? "ArgoCD reports no difference between the desired and the live state. An application can be out of sync while every resource matches, when the difference is a resource that exists on one side only."
+        ? `Comparing the desired state against the live one found no difference across ${diffs.length} managed resource${diffs.length === 1 ? "" : "s"}. An application can still be out of sync when the difference is a resource present on one side only, which the resources view shows.`
         : "ArgoCD returned no managed resource for this application.",
     ].join("\n");
   }
 
   const lines: string[] = [];
+  const heading = resource
+    ? []
+    : [`# ${modified.length} resource${modified.length === 1 ? "" : "s"} differ`, ""];
+  lines.push(...heading);
+
   for (const diff of modified) {
-    lines.push(`## ${describe(diff)}`, "", "```diff", diff.diff.trimEnd(), "```", "");
+    const summary = stats(diff);
+    lines.push(`## ${describe(diff)}${summary ? ` (${summary})` : ""}`, "");
+    if (diff.tooLarge) {
+      lines.push(
+        "The manifest is past the diff line limit, so it was not compared. Open it in ArgoCD to see the difference.",
+        "",
+      );
+      continue;
+    }
+    lines.push("```diff", diff.diff.trimEnd(), "```", "");
   }
   return lines.join("\n");
 }

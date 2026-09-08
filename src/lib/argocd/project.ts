@@ -8,6 +8,8 @@
  */
 
 import { isAttentionWorthy, parseHealth, parseOperationPhase, parseSync } from "../model/status";
+import { DiffTooLargeError, countChanges, diffLines, renderUnified, toHunks } from "../diff/lineDiff";
+import { renderManifest } from "../diff/manifest";
 import type {
   AppCondition,
   AppDetail,
@@ -280,9 +282,17 @@ export function projectHistory(status: unknown, limit = 5): HistoryEntry[] {
 }
 
 /**
- * One entry of the managed-resources response. `liveState`, `targetState` and
- * `predictedLiveState` are deliberately not kept: they are the bulk of the payload and the
- * precomputed `diff` is what gets rendered.
+ * One entry of the managed-resources response, diffed here.
+ *
+ * ArgoCD declares a `diff` field on this response and does not populate it: its own web UI
+ * computes the diff client-side from `targetState` and `normalizedLiveState`. An earlier version
+ * of this extension trusted the field because it existed in the schema, and reported no
+ * difference on applications the web UI showed a clear diff for. So the diff is computed, and
+ * ArgoCD's string is used only when it turns out to be there.
+ *
+ * `liveState`, `targetState` and `predictedLiveState` are dropped once the diff is rendered:
+ * they are the bulk of the payload, and keeping them for hundreds of resources is what the
+ * streaming read path exists to avoid.
  */
 export function projectResourceDiff(raw: unknown): ResourceDiff | undefined {
   const entry = asDict(raw);
@@ -294,14 +304,41 @@ export function projectResourceDiff(raw: unknown): ResourceDiff | undefined {
   if (!name && !kind) {
     return undefined;
   }
-  return {
+
+  const identity = {
     group: asString(entry.group) ?? "",
     kind: kind ?? "",
     namespace: asString(entry.namespace) ?? "",
     name: name ?? "",
-    modified: asBool(entry.modified),
-    diff: asString(entry.diff) ?? "",
   };
+
+  const provided = asString(entry.diff);
+  if (provided) {
+    return { ...identity, modified: true, diff: provided.trimEnd(), added: 0, removed: 0, tooLarge: false };
+  }
+
+  // normalizedLiveState is the live object with the fields ArgoCD ignores already removed, so
+  // it is the better of the two when present.
+  const live = renderManifest(asString(entry.normalizedLiveState) ?? asString(entry.liveState));
+  const target = renderManifest(asString(entry.targetState));
+
+  try {
+    const lines = diffLines(live, target);
+    const stats = countChanges(lines);
+    return {
+      ...identity,
+      modified: stats.added + stats.removed > 0,
+      diff: renderUnified(toHunks(lines)),
+      added: stats.added,
+      removed: stats.removed,
+      tooLarge: false,
+    };
+  } catch (error) {
+    if (error instanceof DiffTooLargeError) {
+      return { ...identity, modified: true, diff: "", added: 0, removed: 0, tooLarge: true };
+    }
+    throw error;
+  }
 }
 
 export function projectRevisionMetadata(raw: unknown): RevisionMetadata {

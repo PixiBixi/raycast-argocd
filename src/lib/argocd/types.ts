@@ -88,14 +88,26 @@ export interface HistoryEntry {
   initiatedBy: string | undefined;
 }
 
-/** One modified resource from the managed-resources endpoint. ArgoCD precomputes `diff`. */
+/**
+ * One resource from the managed-resources endpoint, with the difference between the cluster and
+ * git computed here. ArgoCD declares a `diff` field but does not populate it in practice: its
+ * own web UI diffs `targetState` against `normalizedLiveState` client-side. So this carries the
+ * rendered unified diff, and the raw states are dropped at projection time because they are the
+ * bulk of the payload.
+ */
 export interface ResourceDiff {
   group: string;
   kind: string;
   namespace: string;
   name: string;
+  /** True when the two states actually differ, derived from the computed diff. */
   modified: boolean;
+  /** Unified diff text, ready for a ```diff fence. Empty when nothing differs. */
   diff: string;
+  added: number;
+  removed: number;
+  /** Set when the manifest was past the diff line limit, so nothing was computed. */
+  tooLarge: boolean;
 }
 
 /** `revisions/{revision}/metadata`: who committed what, for the revision actually deployed. */

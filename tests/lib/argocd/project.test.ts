@@ -419,33 +419,89 @@ describe("projectHistory", () => {
 });
 
 describe("projectResourceDiff", () => {
-  it("keeps the identity, the modified flag and the precomputed diff", () => {
-    expect(
-      projectResourceDiff({
-        group: "apps",
-        kind: "Deployment",
-        namespace: "arch-ux",
-        name: "arch-ux",
-        modified: true,
-        diff: "- replicas: 1\n+ replicas: 2",
-        liveState: "{...huge...}",
-        targetState: "{...huge...}",
-        predictedLiveState: "{...huge...}",
-      }),
-    ).toEqual({
+  const live = JSON.stringify({
+    kind: "Deployment",
+    spec: { replicas: 1, template: { spec: { containers: [{ name: "app", image: "x:1" }] } } },
+    status: { readyReplicas: 1 },
+    metadata: { name: "app", resourceVersion: "9" },
+  });
+  const target = JSON.stringify({
+    kind: "Deployment",
+    spec: { replicas: 2, template: { spec: { containers: [{ name: "app", image: "x:1" }] } } },
+    metadata: { name: "app" },
+  });
+
+  it("computes the diff from the two states, because ArgoCD does not populate its diff field", () => {
+    const projected = projectResourceDiff({
       group: "apps",
       kind: "Deployment",
       namespace: "arch-ux",
-      name: "arch-ux",
-      modified: true,
-      diff: "- replicas: 1\n+ replicas: 2",
+      name: "app",
+      liveState: live,
+      targetState: target,
     });
+    expect(projected).toMatchObject({ modified: true, added: 1, removed: 1, tooLarge: false });
+    expect(projected?.diff).toContain("-  replicas: 1");
+    expect(projected?.diff).toContain("+  replicas: 2");
+  });
+
+  it("prefers normalizedLiveState, which already has the ignored fields removed", () => {
+    const projected = projectResourceDiff({
+      kind: "Deployment",
+      name: "app",
+      normalizedLiveState: JSON.stringify({ spec: { replicas: 5 } }),
+      liveState: live,
+      targetState: target,
+    });
+    expect(projected?.diff).toContain("replicas: 5");
+  });
+
+  it("reports no difference when the states match despite key order and cluster-written fields", () => {
+    const projected = projectResourceDiff({
+      kind: "Deployment",
+      name: "app",
+      liveState: live,
+      targetState: JSON.stringify({
+        metadata: { name: "app" },
+        kind: "Deployment",
+        spec: { template: { spec: { containers: [{ image: "x:1", name: "app" }] } }, replicas: 1 },
+      }),
+    });
+    expect(projected).toMatchObject({ modified: false, added: 0, removed: 0, diff: "" });
+  });
+
+  it("treats a resource absent from the cluster as entirely added", () => {
+    const projected = projectResourceDiff({ kind: "Secret", name: "new", targetState: target });
+    expect(projected?.modified).toBe(true);
+    expect(projected?.removed).toBe(0);
+    expect(projected?.added).toBeGreaterThan(0);
+  });
+
+  it("uses ArgoCD's own diff string when it is actually there", () => {
+    const projected = projectResourceDiff({
+      kind: "Deployment",
+      name: "app",
+      diff: "- replicas: 1\n+ replicas: 2\n",
+      liveState: live,
+      targetState: target,
+    });
+    expect(projected?.diff).toBe("- replicas: 1\n+ replicas: 2");
+    expect(projected?.modified).toBe(true);
   });
 
   it("drops the states that make up the bulk of the payload", () => {
-    const projected = projectResourceDiff({ kind: "Deployment", name: "a", liveState: "x" });
+    const projected = projectResourceDiff({ kind: "Deployment", name: "a", liveState: live });
     expect(projected).not.toHaveProperty("liveState");
     expect(projected).not.toHaveProperty("targetState");
+    expect(projected).not.toHaveProperty("normalizedLiveState");
+  });
+
+  it("flags a manifest past the diff line limit instead of freezing on it", () => {
+    const huge = JSON.stringify(
+      Object.fromEntries(Array.from({ length: 4200 }, (_, index) => [`key${index}`, index])),
+    );
+    const projected = projectResourceDiff({ kind: "ConfigMap", name: "huge", liveState: huge, targetState: "{}" });
+    expect(projected).toMatchObject({ tooLarge: true, modified: true, diff: "" });
   });
 
   it("returns undefined for an entry it cannot identify", () => {
