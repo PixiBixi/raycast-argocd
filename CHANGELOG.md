@@ -1,26 +1,26 @@
-# Changelog
+## [Initial Version] - {PR_MERGE_DATE}
 
-## Unreleased
-
-Initial version.
-
-- Search Applications across every configured ArgoCD instance at once, or one of them, with a
-  scope dropdown that survives a relaunch.
-- A per-instance on-disk cache of the projected application list, read before any network call,
-  so the first paint costs nothing and the refresh happens behind it.
-- A capped, self-ranked result list: exact, prefix and substring matches on the name outrank a
-  match anywhere else, multi-word queries are AND, and an empty query shows recently opened
-  applications, then whatever is degraded or out of sync.
-- An unauthenticated reachability probe per instance, so a VPN that is down is reported in under
-  a second instead of after every request has timed out.
-- Search ApplicationSets, with a rollup of the applications each one generated and a jump to
-  them. The link is the ownerReference the ApplicationSet controller stamps on each application,
-  so the filtered list is a local operation.
-- An application detail view with sync and health, source and destination, conditions, images and
-  the last sync result, plus normal and hard refresh.
+- Search applications across several ArgoCD instances at once, or one of them, with a scope
+  selector that survives a relaunch. Results paint from a local cache first and refresh behind
+  you.
+- An application detail view that leads with the resources needing attention, then the commit
+  actually deployed with its author and message, the recent deployments and who triggered each,
+  and the images.
+- A resources view listing every object an application manages with its sync state, health, sync
+  wave, hook and prune flags, plus a per-resource diff and a ready-to-paste `kubectl` command.
+- A diff of what is out of sync, shown as a unified diff with the noise Kubernetes writes itself
+  filtered out.
+- Search ApplicationSets, with a rollup of what each one generated and a jump to those
+  applications. ApplicationSets are also reconstructed from the applications they own, so the
+  list is useful even where the ApplicationSet API returns nothing.
 - A sync form covering revision, prune, dry run, apply-only, force, replace, server-side apply,
-  prune last, schema validation and retry, and a live status view that follows a running sync.
-- Two authentication modes: the session the `argocd` CLI already holds from `argocd login --sso`,
-  and an API token stored in the macOS keychain.
-- Write operations off by default, impossible to enable on a production instance, and refused by
-  the client independently of the UI hiding the action.
+  prune last, schema validation and retry, and a live status view that follows a running sync
+  until it finishes.
+- A menu bar command counting what is degraded, missing or out of sync across every instance,
+  quiet by default until something needs attention.
+- Three authentication modes: single sign-on that logs in once in a browser and renews itself
+  silently, the session the `argocd` CLI already holds, and an API token.
+- A reachability check per instance, so a VPN that is down is reported in under a second rather
+  than after every request has timed out.
+- Write operations off by default, impossible to enable on a production instance, and refused
+  independently of the interface hiding them.
