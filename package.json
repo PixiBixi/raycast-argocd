@@ -55,6 +55,25 @@
         "cluster",
         "config"
       ]
+    },
+    {
+      "name": "monitor",
+      "title": "ArgoCD Monitor",
+      "subtitle": "ArgoCD",
+      "description": "Menu bar counter of the degraded and out-of-sync applications across every instance. Also keeps the local cache warm, so the search command stays instant.",
+      "mode": "menu-bar",
+      "interval": "10m",
+      "preferences": [
+        {
+          "name": "showWhenHealthy",
+          "title": "When everything is healthy",
+          "label": "Show the application count",
+          "description": "Off by default, so the menu bar stays quiet until something needs attention.",
+          "type": "checkbox",
+          "required": false,
+          "default": false
+        }
+      ]
     }
   ],
   "preferences": [
