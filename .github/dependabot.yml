@@ -12,6 +12,12 @@ updates:
         patterns: ["@raycast/*", "@types/node", "@types/react"]
       dev-tooling:
         patterns: ["eslint*", "prettier", "typescript", "vitest", "@vitest/*"]
+    ignore:
+      # @raycast/eslint-config pins typescript to >=4.8.4 <6.1.0, so a major bump
+      # fails npm ci on ERESOLVE, not on anything this repository can fix.
+      # Revisit when @raycast/eslint-config widens the range.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
