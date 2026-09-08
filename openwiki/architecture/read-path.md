@@ -92,7 +92,7 @@ says how many more matched.
 Ranking the whole 2053-application corpus for a single-letter query, which matches every row,
 takes 7.4 ms. A keystroke has roughly 16 ms before it is felt. There is deliberately no fuzzy
 subsequence matching: it is measurably slower and, on names shaped like
-`apache-druid-bidder-euw1-staging`, produces confident nonsense. A substring match on the name
+`service-alpha-euw1-staging`, produces confident nonsense. A substring match on the name
 is what an operator means.
 
 Multi-word queries are AND, which is what makes `team-a redis` a way to narrow thousands of

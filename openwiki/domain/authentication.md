@@ -121,15 +121,15 @@ An ArgoCD account token carries **the account's permissions, not the operator's*
 deployment whose RBAC binds identity groups to roles, for example
 
 ```
-g, argocd-admins, role:admin
-g, argocd-rnd,    role:readonly
+g, platform-admins, role:admin
+g, engineering,    role:readonly
 ```
 
 and grants a service account a global read
 
 ```
-p, sa-argocd-scanner, applications,    get, */*, allow
-p, sa-argocd-scanner, applicationsets, get, */*, allow
+p, sa-readonly, applications,    get, */*, allow
+p, sa-readonly, applicationsets, get, */*, allow
 ```
 
 then a token for that account has three consequences.

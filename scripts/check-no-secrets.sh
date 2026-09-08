@@ -57,7 +57,24 @@ if hits=$(tracked "${SCAN_PATHS[@]}" | xargs -r grep -nE '[a-z0-9-]+\.(internal|
   report "an internal hostname is present in the tree" "$hits"
 fi
 
-# 4. Email addresses other than the maintainer's noreply address.
+# 4. An optional local deny-list, never committed.
+#
+#    The structural checks above cannot catch an organisation's own vocabulary: a service
+#    account name, an RBAC group, an internal project. Naming those in this script would put
+#    them in the repository it exists to protect, so the list lives in a gitignored file that
+#    each machine keeps for itself. One extended-regex pattern per line, blank lines and lines
+#    starting with # ignored.
+DENYLIST=".check-no-secrets-denylist"
+if [ -f "$DENYLIST" ]; then
+  patterns=$(grep -vE '^[[:space:]]*(#|$)' "$DENYLIST" | paste -sd'|' -)
+  if [ -n "$patterns" ]; then
+    if hits=$(tracked "${SCAN_PATHS[@]}" | xargs -r grep -nIiE "$patterns" 2>/dev/null | grep -v 'check-no-secrets.sh'); then
+      report "a term from the local deny-list is present in the tree" "$hits"
+    fi
+  fi
+fi
+
+# 5. Email addresses other than the maintainer's noreply address.
 if hits=$(tracked "${SCAN_PATHS[@]}" | xargs -r grep -nEo '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' 2>/dev/null | grep -vE '@(users\.noreply\.github\.com|example\.com)' | grep -v 'check-no-secrets.sh'); then
   report "an email address that is not a noreply or example address is present in the tree" "$hits"
 fi

@@ -982,7 +982,7 @@ git commit -S -m "feat(sync): sync form with ArgoCD sync options and a live stat
       set, and `LICENSE` (MIT).
 - [ ] **Step 3:** Run the full gate: `npm test && npx tsc --noEmit && npx ray lint && npx ray build`.
 - [ ] **Step 4:** Verify no secret leaked:
-      `git grep -niE "eqtv|equativ|okta|internal\.|Bearer [A-Za-z0-9]" -- . ':!docs'` returns
+      `./scripts/check-no-secrets.sh` returns
       nothing actionable.
 - [ ] **Step 5:** Commit.
 
@@ -1434,7 +1434,7 @@ viable". It is not an authentication method, it is a chore with a deadline.
 **What was established before writing anything**, since the last three bugs all came from
 assuming a server does what its schema suggests:
 
-- Okta's discovery document lists `refresh_token` among its grants, `offline_access` among its
+- The identity provider's discovery document lists `refresh_token` among its grants, `offline_access` among its
   scopes, `none` among its token endpoint auth methods, and `S256` as a code challenge method.
   So a public-client PKCE flow with silent renewal is supported by the provider.
 - It also advertises the device authorization grant, which needs no redirect URI at all. Tested
@@ -1529,8 +1529,8 @@ notre compte donc chiant". Both halves are correct, and the second is not a nuis
 security property.
 
 **An ArgoCD account token carries the account's permissions, not the operator's.** On the target
-deployment the RBAC binds `argocd-admins` to `role:admin` and `argocd-rnd` to `role:readonly`,
-and grants `sa-argocd-scanner` a global `applications, get` and `applicationsets, get`. So a
+deployment the RBAC binds `platform-admins` to `role:admin` and `engineering` to `role:readonly`,
+and grants `sa-readonly` a global `applications, get` and `applicationsets, get`. So a
 token for that account:
 
 - makes every request appear under the service account, which is the opposite of what an audit
@@ -1597,3 +1597,35 @@ The result is what the operator was asking for from the start: one `argocd login
 instance, one credential store that the CLI, this extension and any other ArgoCD tool all read,
 and nothing ever pasted into Raycast. `sso` and `cli` are now documented as equals that differ
 only in where the credential lives, rather than a design and a fallback.
+
+### A15: the leak gate did not catch the organisation's own vocabulary
+
+Found while preparing to create the GitHub repository, which is the last moment it could have
+been found before the tree became public.
+
+The structural checks in `scripts/check-no-secrets.sh` were designed on a principle that still
+holds: match on the _shape_ of what must not be published, never on a deny-list of the
+organisation's names, because such a list would leak them into the repository it protects. What
+that principle does not cover is vocabulary with no distinctive shape. Real material had reached
+the tracked tree and passed every check:
+
+- the deployment's actual RBAC, group names and service account names included, quoted as an
+  example in the wiki and in an amendment;
+- real application, namespace and project names in test fixtures, taken from screenshots shared
+  during development;
+- a real application name used as an illustration in the read-path page;
+- the identity provider's name in a code comment;
+- and, with some irony, the organisation's name inside the A1 note explaining that the gate
+  deliberately does not name it.
+
+All of it is now generic. Fixtures and examples use `app-one`, `team-a`, `sa-readonly`,
+`platform-admins`, `engineering`, and "the identity provider".
+
+**The gate gained a local deny-list**, `.check-no-secrets-denylist`, one extended-regex pattern
+per line and **gitignored**. Each machine keeps its own, so the structural checks stay in the
+repository and the organisation-specific ones stay out of it. That is what caught the last
+remaining reference, and it is the mechanism that would have caught all of them.
+
+The lesson is the session's own, in a new place: a check that passes is not evidence of the
+property it is named after. This one was named "no cluster identity in the tracked tree" and
+verified something narrower than its name for the whole of its life.

@@ -248,24 +248,24 @@ describe("projectResources", () => {
         group: "apps",
         version: "v1",
         kind: "Deployment",
-        namespace: "arch-ux",
-        name: "arch-ux",
+        namespace: "app-one",
+        name: "app-one",
         status: "OutOfSync",
         health: { status: "Progressing" },
         syncWave: 1,
       },
-      { kind: "Service", name: "arch-ux", status: "Synced", health: { status: "Healthy" } },
+      { kind: "Service", name: "app-one", status: "Synced", health: { status: "Healthy" } },
       { kind: "ConfigMap", name: "stale", status: "OutOfSync", requiresPruning: true },
       { kind: "Job", name: "migrate", hook: true, status: "Synced" },
       // No comparison yet: ArgoCD leaves status empty, which is not the same as Unknown.
       { kind: "Secret", name: "pending" },
-      { namespace: "arch-ux" },
+      { namespace: "app-one" },
     ],
   };
 
   it("projects every identifiable resource", () => {
     const resources = projectResources(STATUS);
-    expect(resources.map((r) => r.name)).toEqual(["arch-ux", "arch-ux", "stale", "migrate", "pending"]);
+    expect(resources.map((r) => r.name)).toEqual(["app-one", "app-one", "stale", "migrate", "pending"]);
   });
 
   it("keeps the full identity so a resource can be addressed", () => {
@@ -273,8 +273,8 @@ describe("projectResources", () => {
       group: "apps",
       version: "v1",
       kind: "Deployment",
-      namespace: "arch-ux",
-      name: "arch-ux",
+      namespace: "app-one",
+      name: "app-one",
       status: "OutOfSync",
       health: "Progressing",
       hook: false,
@@ -435,7 +435,7 @@ describe("projectResourceDiff", () => {
     const projected = projectResourceDiff({
       group: "apps",
       kind: "Deployment",
-      namespace: "arch-ux",
+      namespace: "app-one",
       name: "app",
       liveState: live,
       targetState: target,
@@ -527,13 +527,13 @@ describe("projectDetail resource inventory", () => {
   it("carries the resources, their counts, the policy and the history", () => {
     const detail = projectDetail(
       {
-        metadata: { name: "arch-ux" },
-        spec: { project: "coe-arch-dev", syncPolicy: { automated: { prune: true } } },
+        metadata: { name: "app-one" },
+        spec: { project: "team-a", syncPolicy: { automated: { prune: true } } },
         status: {
           sync: { status: "OutOfSync" },
           health: { status: "Progressing" },
           reconciledAt: "2026-09-08T09:30:00Z",
-          resources: [{ kind: "Deployment", name: "arch-ux", status: "OutOfSync" }],
+          resources: [{ kind: "Deployment", name: "app-one", status: "OutOfSync" }],
           history: [{ revision: "aaa", deployedAt: "2026-09-07T09:00:00Z" }],
         },
       },
@@ -582,15 +582,15 @@ describe("orderResources", () => {
 describe("resourceKey", () => {
   it("addresses a resource the way ArgoCD's own deep links do", () => {
     const resource = projectResources({
-      resources: [{ group: "apps", kind: "Deployment", namespace: "arch-ux", name: "arch-ux" }],
+      resources: [{ group: "apps", kind: "Deployment", namespace: "app-one", name: "app-one" }],
     })[0]!;
-    expect(resourceKey(resource)).toBe("apps/Deployment/arch-ux/arch-ux");
+    expect(resourceKey(resource)).toBe("apps/Deployment/app-one/app-one");
   });
 
   it("keeps the empty group of a core resource, which is what ArgoCD expects", () => {
     const resource = projectResources({
-      resources: [{ kind: "Service", namespace: "arch-ux", name: "arch-ux" }],
+      resources: [{ kind: "Service", namespace: "app-one", name: "app-one" }],
     })[0]!;
-    expect(resourceKey(resource)).toBe("/Service/arch-ux/arch-ux");
+    expect(resourceKey(resource)).toBe("/Service/app-one/app-one");
   });
 });

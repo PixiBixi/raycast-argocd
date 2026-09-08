@@ -1,7 +1,7 @@
 /**
  * Reads the session the official `argocd` CLI already holds.
  *
- * `argocd login <host> --sso` runs the Okta PKCE loopback flow and stores the resulting bearer
+ * `argocd login <host> --sso` runs the OIDC PKCE loopback flow and stores the resulting bearer
  * token in ~/.config/argocd/config (mode 0600). Reusing it means this extension registers no
  * OIDC redirect URI, holds no client secret, and writes no credential of its own: the token
  * lifecycle stays owned by the tool that already owns it.

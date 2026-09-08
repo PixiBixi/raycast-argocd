@@ -84,6 +84,19 @@ Fixtures use `https://argocd.example.com`, application names like `app-one`, pro
 When you add a fixture with a new legitimate host, add it to `allowed_host` in the script rather
 than working around the check.
 
+### The local deny-list
+
+Structural checks cannot recognise an organisation's own vocabulary: a service account name, an
+RBAC group, an internal project. Naming those in the script would put them in the repository it
+exists to protect, so they live in `.check-no-secrets-denylist`, one extended-regex pattern per
+line, **gitignored by design**. Each machine keeps its own.
+
+Create one when working against a real deployment. It exists because the structural checks alone
+were not enough: real service account names, RBAC group names and application names taken from
+screenshots reached the tracked tree, in test fixtures and in wiki examples, and passed every
+check in the list above. The local list caught the last of them, a provider name in a code
+comment.
+
 ## CI
 
 Two workflows, hardened. Every job pins its actions by commit SHA, runs

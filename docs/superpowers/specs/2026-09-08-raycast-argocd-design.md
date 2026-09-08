@@ -19,7 +19,7 @@ N ArgoCD instances and act on it" into a few keystrokes, with no browser tab.
 
 - **Scale**: the target instances hold ~2000 and ~2200 `Application` objects across ~70 and
   ~36 projects. Any design that fetches or renders full application objects is dead on arrival.
-- **Auth**: the instances use Okta OIDC with PKCE, `admin.enabled: false`. The user does not
+- **Auth**: the instances use OIDC with PKCE, `admin.enabled: false`. The user does not
   want to generate long-lived API tokens.
 - **Production is read-only** for the user. Write paths must be off by default and must never
   be reachable by accident.
@@ -87,12 +87,12 @@ server-side RBAC, not a replacement for it.
 
 Two modes, no OAuth implementation of our own.
 
-**`cli` (default).** The official `argocd` CLI already implements the Okta PKCE loopback flow
+**`cli` (default).** The official `argocd` CLI already implements the OIDC PKCE loopback flow
 (`argocd login <host> --sso`) and persists the resulting bearer token, plus a refresh token,
 in `~/.config/argocd/config` (mode 0600). The extension reads that file, finds the `users[]`
 entry whose `name` matches the instance host, and uses `auth-token` as `Authorization: Bearer`.
 
-Rationale: no new Okta redirect URI to register, no client secret in the extension, no secret
+Rationale: no new redirect URI to register, no client secret in the extension, no secret
 written by us, and the token lifecycle stays owned by the tool that already owns it. The cost
 is a dependency on the `argocd` binary being installed and logged in.
 
@@ -421,7 +421,7 @@ No fixture is derived from a real cluster.
   fallback: it needs nothing from the identity provider. The README leads with the check.
 - **`argocd` CLI dependency**: if absent or never logged in, the `cli` auth mode fails with a
   clear message naming the login command.
-- **Okta token lifetime** (60 min): re-login is a two-keystroke action, not a reconfiguration.
+- **Identity provider token lifetime** (60 min): re-login is a two-keystroke action, not a reconfiguration.
 - **Raycast `LocalStorage` is not encrypted**: hence no token in it, keychain only.
 - **The probe endpoint is unauthenticated**: it is used only to decide whether to attempt a
   request. Nothing in the UI treats a successful probe as an authorisation.

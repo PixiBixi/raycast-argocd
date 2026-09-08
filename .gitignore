@@ -7,3 +7,6 @@ coverage/
 .env
 .env.local
 raycast-env.d.ts
+
+# Local deny-list for the leak gate, machine-specific by design
+.check-no-secrets-denylist
