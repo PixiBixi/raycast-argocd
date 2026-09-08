@@ -4,6 +4,19 @@
  * Raycast's LocalStorage is not encrypted, so it is the wrong home for a credential. The macOS
  * keychain is reached through /usr/bin/security, a system binary, which keeps the extension
  * free of native dependencies that Raycast could not bundle anyway.
+ *
+ * The token is passed in argv, which was not the first choice. `security add-generic-password`
+ * has no way to read a password from a file descriptor: the only alternative is `-w` with no
+ * value, which prompts twice on the terminal. Feeding those prompts over stdin works from a
+ * shell and does not work inside Raycast, where the child's stdin is not delivered: `security`
+ * then stores an empty password and exits 0.
+ *
+ * So argv it is, and the exposure is worth stating plainly rather than pretending it away: for
+ * the lifetime of one short-lived process, the token is visible to processes running as the
+ * same user. That is the same boundary that already governs the stored item, since
+ * `security find-generic-password -w` returns it to any same-uid process without a prompt.
+ * macOS does not expose another user's argv without root. What this buys over the alternative
+ * is a write that actually happens.
  */
 
 export type Exec = (
@@ -23,21 +36,11 @@ export function readTokenArgs(instanceId: string): string[] {
 }
 
 /**
- * The token is deliberately absent from argv: everything in argv is visible to any process that
- * can run `ps`. It is written through stdin instead, using the `-w` form with no value.
- *
- * That form prompts twice, "password data for new item" then "retype password for new item", so
- * the value has to be fed twice. Feeding it once makes `security` print "passwords don't match",
- * store an empty password, and still exit 0, which is why writeKeychainToken reads the value
- * back rather than trusting the exit code.
+ * `-U` upserts, so re-storing a token over an existing item, including the empty item an
+ * interrupted write leaves behind, replaces it.
  */
-export function writeTokenArgs(instanceId: string): string[] {
-  return ["add-generic-password", "-U", "-s", KEYCHAIN_SERVICE, "-a", instanceId, "-w"];
-}
-
-/** What has to go on stdin for the two prompts `security -w` issues. */
-export function writeTokenInput(token: string): string {
-  return `${token}\n${token}\n`;
+export function writeTokenArgs(instanceId: string, token: string): string[] {
+  return ["add-generic-password", "-U", "-s", KEYCHAIN_SERVICE, "-a", instanceId, "-w", token];
 }
 
 export function deleteTokenArgs(instanceId: string): string[] {
@@ -64,8 +67,6 @@ export async function readKeychainToken(instanceId: string, exec: Exec): Promise
 }
 
 export async function writeKeychainToken(instanceId: string, token: string, exec: Exec): Promise<void> {
-  // A newline would terminate one of the two prompts early and corrupt the stored value. No
-  // bearer token contains one, so this is a bug or a bad paste, not something to paper over.
   if (/[\r\n]/.test(token)) {
     throw new Error("The token contains a line break, so it cannot be stored. Paste it as one line.");
   }
@@ -73,18 +74,31 @@ export async function writeKeychainToken(instanceId: string, token: string, exec
     throw new Error("Refusing to store an empty token.");
   }
 
-  const result = await exec(SECURITY_BINARY, writeTokenArgs(instanceId), {
-    input: writeTokenInput(token),
-  });
+  const result = await exec(SECURITY_BINARY, writeTokenArgs(instanceId, token));
   if (result.code !== 0) {
     throw failure("write", result.code, result.stderr);
   }
 
   // `security` exits 0 even when it stored nothing, so the exit code is not evidence. The only
-  // proof the write worked is reading the value back.
-  const stored = await readKeychainToken(instanceId, exec);
+  // proof is reading the value back, and the diagnosis has to distinguish the two ways that
+  // can fail, because one message for both is what made the previous bug hard to place.
+  let stored: string | undefined;
+  try {
+    stored = await readKeychainToken(instanceId, exec);
+  } catch (error) {
+    throw new Error(
+      `The token was written but could not be read back to confirm it: ${(error as Error).message}`,
+    );
+  }
+
+  if (stored === undefined) {
+    throw new Error("The keychain reported no item after the write. Nothing was saved.");
+  }
   if (stored !== token) {
-    throw new Error("The keychain did not store the token. Nothing was saved.");
+    // Lengths only, never the values: this string reaches a toast.
+    throw new Error(
+      `The keychain stored a different value than the one given (${stored.length} characters instead of ${token.length}). Nothing usable was saved.`,
+    );
   }
 }
 

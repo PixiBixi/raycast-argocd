@@ -34,7 +34,14 @@ export const execFileAsync: Exec = (file, args, opts) =>
       resolve({ stdout: String(stdout), stderr: String(stderr), code });
     });
     if (opts?.input !== undefined) {
-      child.stdin?.end(opts.input);
+      // Not `child.stdin?.end(...)`: when stdin is unavailable the optional chain writes
+      // nothing and reports nothing, and the child then runs against no input at all. That is
+      // how a keychain write silently stored an empty password.
+      if (!child.stdin) {
+        reject(new Error(`Cannot write to the stdin of ${file}: the child has no stdin stream.`));
+        return;
+      }
+      child.stdin.end(opts.input);
     }
   });
 

@@ -7,7 +7,6 @@ import {
   readTokenArgs,
   writeKeychainToken,
   writeTokenArgs,
-  writeTokenInput,
   type Exec,
 } from "../../../src/lib/auth/keychain";
 
@@ -22,14 +21,15 @@ describe("argv construction", () => {
     expect(readTokenArgs("i1")).toEqual(["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", "i1", "-w"]);
   });
 
-  it("writes with an upsert and never puts the token in argv", () => {
-    const args = writeTokenArgs("i1");
+  it("writes with an upsert, carrying the value after -w", () => {
+    const args = writeTokenArgs("i1", SECRET);
     expect(args).toContain("-U");
     expect(args).toContain("add-generic-password");
     expect(args.slice(args.indexOf("-s"), args.indexOf("-s") + 2)).toEqual(["-s", KEYCHAIN_SERVICE]);
     expect(args.slice(args.indexOf("-a"), args.indexOf("-a") + 2)).toEqual(["-a", "i1"]);
-    expect(args).not.toContain(SECRET);
-    expect(args.at(-1)).toBe("-w");
+    // security cannot read a password from a file descriptor, and the -w prompt form does not
+    // receive stdin inside Raycast. See the module comment for the trade this represents.
+    expect(args.slice(-2)).toEqual(["-w", SECRET]);
   });
 
   it("deletes with delete-generic-password", () => {
@@ -62,22 +62,14 @@ describe("readKeychainToken", () => {
   });
 });
 
-/**
- * Behaves like the real /usr/bin/security: `add-generic-password -w` with no value prompts
- * twice, and if it does not get the same value twice it stores an empty password and still
- * exits 0. Reproducing that is the only way a test can catch the bug it caused.
- */
+/** Behaves like the real /usr/bin/security for the three subcommands used here. */
 function fakeSecurity() {
   const store = new Map<string, string>();
-  const exec: Exec = vi.fn(async (_file, args, opts) => {
+  const exec: Exec = vi.fn(async (_file, args) => {
     const account = args[args.indexOf("-a") + 1] ?? "";
     if (args[0] === "add-generic-password") {
-      const lines = (opts?.input ?? "").split("\n");
-      const first = lines[0] ?? "";
-      const second = lines[1] ?? "";
-      store.set(account, first === second && first.length > 0 ? first : "");
-      const stderr = first === second ? "" : "passwords don't match\n";
-      return { stdout: "", stderr, code: 0 };
+      store.set(account, args[args.indexOf("-w") + 1] ?? "");
+      return { stdout: "", stderr: "", code: 0 };
     }
     if (args[0] === "find-generic-password") {
       const value = store.get(account);
@@ -94,12 +86,6 @@ function fakeSecurity() {
   return { exec, store };
 }
 
-describe("writeTokenInput", () => {
-  it("feeds the value twice, because security -w prompts twice", () => {
-    expect(writeTokenInput(SECRET)).toBe(`${SECRET}\n${SECRET}\n`);
-  });
-});
-
 describe("writeKeychainToken", () => {
   it("actually stores the token, verified by reading it back", async () => {
     const { exec, store } = fakeSecurity();
@@ -108,27 +94,39 @@ describe("writeKeychainToken", () => {
     await expect(readKeychainToken("i1", exec)).resolves.toBe(SECRET);
   });
 
-  it("passes the token on stdin, never in argv", async () => {
-    const { exec } = fakeSecurity();
-    await writeKeychainToken("i1", SECRET, exec);
-    const [, args, opts] = (exec as unknown as { mock: { calls: [string, string[], { input?: string }?][] } })
-      .mock.calls[0]!;
-    expect(args).not.toContain(SECRET);
-    expect(opts?.input).toContain(SECRET);
+  it("throws when security exits 0 having stored an empty password", async () => {
+    // What actually happened inside Raycast with the stdin prompt form: item created, empty
+    // password, exit 0, success reported.
+    const storingNothing: Exec = vi.fn(async (_file, args) =>
+      args[0] === "add-generic-password"
+        ? { stdout: "", stderr: "", code: 0 }
+        : { stdout: "\n", stderr: "", code: 0 },
+    );
+    await expect(writeKeychainToken("i1", SECRET, storingNothing)).rejects.toThrowError(
+      /reported no item/,
+    );
   });
 
-  it("throws when security exits 0 having stored nothing", async () => {
-    // The real failure: one prompt fed, "passwords don't match", empty password, exit 0.
-    const { store } = fakeSecurity();
-    const halfFeeding: Exec = vi.fn(async (_file, args) => {
-      const account = args[args.indexOf("-a") + 1] ?? "";
-      if (args[0] === "add-generic-password") {
-        store.set(account, "");
-        return { stdout: "", stderr: "passwords don't match", code: 0 };
-      }
-      return { stdout: "\n", stderr: "", code: 0 };
-    });
-    await expect(writeKeychainToken("i1", SECRET, halfFeeding)).rejects.toThrowError(/did not store/);
+  it("throws when the keychain stored a different value, naming lengths and not values", async () => {
+    const storingOther: Exec = vi.fn(async (_file, args) =>
+      args[0] === "add-generic-password"
+        ? { stdout: "", stderr: "", code: 0 }
+        : { stdout: "truncated\n", stderr: "", code: 0 },
+    );
+    const rejection = writeKeychainToken("i1", SECRET, storingOther);
+    await expect(rejection).rejects.toThrowError(/9 characters instead of 13/);
+    await expect(rejection).rejects.not.toThrowError(new RegExp(SECRET));
+  });
+
+  it("distinguishes a write that landed from a read-back that failed", async () => {
+    const unreadable: Exec = vi.fn(async (_file, args) =>
+      args[0] === "add-generic-password"
+        ? { stdout: "", stderr: "", code: 0 }
+        : { stdout: "", stderr: "authorization denied", code: 51 },
+    );
+    await expect(writeKeychainToken("i1", SECRET, unreadable)).rejects.toThrowError(
+      /could not be read back/,
+    );
   });
 
   it("throws when security fails outright", async () => {
