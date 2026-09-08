@@ -59,8 +59,11 @@ describe("summarize", () => {
     expect(summary.totalCount).toBe(3);
   });
 
-  it("counts a missing application as degraded", () => {
-    expect(summarize([report({ apps: [MISSING] })]).degradedCount).toBe(1);
+  it("keeps missing apart from degraded, since they are different conditions", () => {
+    const summary = summarize([report({ apps: [MISSING, DEGRADED] })]);
+    expect(summary.degradedCount).toBe(1);
+    expect(summary.missingCount).toBe(1);
+    expect(summary.instances[0]?.missing.map((a) => a.name)).toEqual(["gone"]);
   });
 
   it("counts an application that is both once, as degraded", () => {
@@ -121,8 +124,13 @@ describe("monitorState", () => {
     expect(monitorState(summarize([report({ apps: [DEGRADED, DRIFTED] })]))).toBe("degraded");
   });
 
-  it("reports drift when nothing is degraded", () => {
+  it("reports drift when nothing is degraded or missing", () => {
     expect(monitorState(summarize([report({ apps: [DRIFTED] })]))).toBe("drifting");
+  });
+
+  it("reports missing between degraded and drift", () => {
+    expect(monitorState(summarize([report({ apps: [MISSING, DRIFTED] })]))).toBe("missing");
+    expect(monitorState(summarize([report({ apps: [DEGRADED, MISSING] })]))).toBe("degraded");
   });
 
   it("reports a real failure ahead of a stale instance", () => {
@@ -148,14 +156,15 @@ describe("monitorState", () => {
 describe("monitorTitle", () => {
   const options = { showWhenHealthy: false };
 
-  it("leads with the degraded count and mentions drift after it", () => {
-    expect(monitorTitle(summarize([report({ apps: [DEGRADED, DRIFTED] })]), options)).toBe(
-      "1 degraded, 1 drifting",
+  it("carries only the urgent number, since a menu bar has very little room", () => {
+    expect(monitorTitle(summarize([report({ apps: [DEGRADED, MISSING, DRIFTED] })]), options)).toBe(
+      "1 degraded",
     );
   });
 
-  it("omits the drift clause when there is none", () => {
-    expect(monitorTitle(summarize([report({ apps: [DEGRADED] })]), options)).toBe("1 degraded");
+  it("falls back to missing, then to drift", () => {
+    expect(monitorTitle(summarize([report({ apps: [MISSING, DRIFTED] })]), options)).toBe("1 missing");
+    expect(monitorTitle(summarize([report({ apps: [DRIFTED] })]), options)).toBe("1 out of sync");
   });
 
   it("reports drift on its own", () => {
@@ -196,9 +205,7 @@ describe("monitorTooltip", () => {
       report({ instance: instance({ id: "i1", name: "dev" }), apps: [DEGRADED, DRIFTED, HEALTHY] }),
       report({ instance: instance({ id: "i2", name: "prod" }), apps: [HEALTHY] }),
     ]);
-    expect(monitorTooltip(summary)).toBe(
-      "dev: 1 degraded, 1 out of sync of 3\nprod: all healthy of 1",
-    );
+    expect(monitorTooltip(summary)).toBe("dev: 1 degraded, 1 out of sync of 3\nprod: all healthy of 1");
   });
 
   it("says so when nothing is configured", () => {

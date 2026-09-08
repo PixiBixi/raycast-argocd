@@ -25,6 +25,13 @@ export interface MonitorInstance {
   name: string;
   env: Environment;
   degraded: AppSummary[];
+  /**
+   * Kept apart from degraded on purpose. Degraded means a resource is unhealthy; missing means
+   * it is not there. ArgoCD reports them as different health statuses, and on a real instance
+   * missing was a quarter of what an earlier version called degraded, which made the headline
+   * alarming about cases that are often not.
+   */
+  missing: AppSummary[];
   outOfSync: AppSummary[];
   total: number;
   /** Why this instance's numbers may be stale, when they are. */
@@ -49,6 +56,7 @@ export function classifyProblem(error: Error | undefined): ProblemKind | undefin
 export interface MonitorSummary {
   instances: MonitorInstance[];
   degradedCount: number;
+  missingCount: number;
   outOfSyncCount: number;
   totalCount: number;
   /** Instances that could not be refreshed at all, so their numbers mean nothing new. */
@@ -63,9 +71,9 @@ export interface InstanceReport {
 }
 
 /**
- * An application is degraded or missing, or it is out of sync. Those two are counted separately
- * because they call for different reactions: degraded is broken now, out of sync is a drift
- * that auto-sync may well be about to fix.
+ * Three buckets, because they call for three reactions: degraded is broken now, missing is a
+ * resource that is not there, and out of sync is drift that auto-sync may well be about to fix.
+ * An application in more than one bucket is counted once, in the most urgent.
  */
 export function summarize(reports: InstanceReport[]): MonitorSummary {
   const instances: MonitorInstance[] = [];
@@ -73,14 +81,17 @@ export function summarize(reports: InstanceReport[]): MonitorSummary {
 
   for (const report of reports) {
     const degraded: AppSummary[] = [];
+    const missing: AppSummary[] = [];
     const outOfSync: AppSummary[] = [];
 
     for (const app of report.apps) {
       if (!isAttentionWorthy(app.health, app.sync)) {
         continue;
       }
-      if (app.health === "Degraded" || app.health === "Missing") {
+      if (app.health === "Degraded") {
         degraded.push(app);
+      } else if (app.health === "Missing") {
+        missing.push(app);
       } else if (app.sync === "OutOfSync") {
         outOfSync.push(app);
       }
@@ -88,6 +99,7 @@ export function summarize(reports: InstanceReport[]): MonitorSummary {
 
     const byName = (a: AppSummary, b: AppSummary) => a.name.localeCompare(b.name);
     degraded.sort(byName);
+    missing.sort(byName);
     outOfSync.sort(byName);
 
     if (report.error) {
@@ -99,6 +111,7 @@ export function summarize(reports: InstanceReport[]): MonitorSummary {
       name: report.instance.name,
       env: report.instance.env,
       degraded,
+      missing,
       outOfSync,
       total: report.apps.length,
       problem: report.error ? report.error.message : undefined,
@@ -110,13 +123,14 @@ export function summarize(reports: InstanceReport[]): MonitorSummary {
   return {
     instances,
     degradedCount: instances.reduce((sum, instance) => sum + instance.degraded.length, 0),
+    missingCount: instances.reduce((sum, instance) => sum + instance.missing.length, 0),
     outOfSyncCount: instances.reduce((sum, instance) => sum + instance.outOfSync.length, 0),
     totalCount: instances.reduce((sum, instance) => sum + instance.total, 0),
     unreportedInstances,
   };
 }
 
-export type MonitorState = "degraded" | "drifting" | "stale" | "healthy" | "empty";
+export type MonitorState = "degraded" | "missing" | "drifting" | "stale" | "healthy" | "empty";
 
 export function monitorState(summary: MonitorSummary): MonitorState {
   if (summary.instances.length === 0) {
@@ -124,6 +138,9 @@ export function monitorState(summary: MonitorSummary): MonitorState {
   }
   if (summary.degradedCount > 0) {
     return "degraded";
+  }
+  if (summary.missingCount > 0) {
+    return "missing";
   }
   if (summary.outOfSyncCount > 0) {
     return "drifting";
@@ -149,10 +166,12 @@ export function monitorTitle(summary: MonitorSummary, options: TitleOptions): st
   switch (monitorState(summary)) {
     case "empty":
       return undefined;
-    case "degraded": {
-      const drift = summary.outOfSyncCount > 0 ? `, ${summary.outOfSyncCount} drifting` : "";
-      return `${summary.degradedCount} degraded${drift}`;
-    }
+    case "degraded":
+      // Only the urgent number. A menu bar has very little room, and the breakdown is one
+      // hover away in the tooltip and one click away in the menu.
+      return `${summary.degradedCount} degraded`;
+    case "missing":
+      return `${summary.missingCount} missing`;
     case "drifting":
       return `${summary.outOfSyncCount} out of sync`;
     case "stale":
@@ -172,6 +191,7 @@ export function monitorTooltip(summary: MonitorSummary): string {
     .map((instance) => {
       const parts = [
         instance.degraded.length > 0 ? `${instance.degraded.length} degraded` : undefined,
+        instance.missing.length > 0 ? `${instance.missing.length} missing` : undefined,
         instance.outOfSync.length > 0 ? `${instance.outOfSync.length} out of sync` : undefined,
       ].filter(Boolean);
       const state = parts.length > 0 ? parts.join(", ") : "all healthy";

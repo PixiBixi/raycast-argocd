@@ -54,6 +54,7 @@ interface MonitorPreferences {
  */
 const STATE_ICON: Record<MonitorState, Image.ImageLike> = {
   degraded: { source: Icon.HeartDisabled, tintColor: Color.Red },
+  missing: { source: Icon.QuestionMarkCircle, tintColor: Color.Orange },
   drifting: { source: Icon.ArrowClockwise, tintColor: Color.Yellow },
   stale: { source: Icon.WifiDisabled, tintColor: Color.Orange },
   healthy: "argocd.png",
@@ -203,6 +204,18 @@ function InstanceSections({ instance, all }: { instance: MonitorInstance; all: A
           {instance.degraded.length > PER_SECTION ? (
             <MenuBarExtra.Item
               title={`${instance.degraded.length - PER_SECTION} more`}
+              onAction={() => void open("raycast://extensions/pixibixi/argocd/search-applications")}
+            />
+          ) : null}
+        </MenuBarExtra.Section>
+      ) : null}
+
+      {instance.missing.length > 0 ? (
+        <MenuBarExtra.Section title={`Missing (${instance.missing.length})`}>
+          {instance.missing.slice(0, PER_SECTION).map(appItem)}
+          {instance.missing.length > PER_SECTION ? (
+            <MenuBarExtra.Item
+              title={`${instance.missing.length - PER_SECTION} more`}
               onAction={() => void open("raycast://extensions/pixibixi/argocd/search-applications")}
             />
           ) : null}
