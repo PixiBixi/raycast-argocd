@@ -125,7 +125,8 @@ describe("rule 2: a live cached renewal wins over a round trip", () => {
 });
 
 describe("rule 3: renewal from the config's refresh token", () => {
-  const lapsed = () => deps({ readCliToken: vi.fn().mockResolvedValue(cliToken({ expiresAt: new Date(NOW - 1) })) });
+  const lapsed = () =>
+    deps({ readCliToken: vi.fn().mockResolvedValue(cliToken({ expiresAt: new Date(NOW - 1) })) });
 
   it("uses the refresh token the argocd CLI stored, and the instance's own provider settings", async () => {
     const d = lapsed();

@@ -143,4 +143,3 @@ describe("serialization", () => {
     expect(parseSession(JSON.stringify({ idToken }))?.expiresAt).toBe(2_000_000_000_000);
   });
 });
-

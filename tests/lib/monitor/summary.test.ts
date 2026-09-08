@@ -168,9 +168,9 @@ describe("monitorTitle", () => {
   });
 
   it("reports drift on its own", () => {
-    expect(monitorTitle(summarize([report({ apps: [DRIFTED, app("d2", { sync: "OutOfSync" })] })]), options)).toBe(
-      "2 out of sync",
-    );
+    expect(
+      monitorTitle(summarize([report({ apps: [DRIFTED, app("d2", { sync: "OutOfSync" })] })]), options),
+    ).toBe("2 out of sync");
   });
 
   it("stays quiet when everything is healthy", () => {

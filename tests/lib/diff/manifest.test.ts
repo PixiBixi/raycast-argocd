@@ -113,7 +113,9 @@ describe("diffing two manifests", () => {
     metadata: {
       name: "pullsecret",
       namespace: "infra-argo-workflows-jobs",
-      annotations: { "argocd.argoproj.io/tracking-id": "argo-workflows-prod-euw2:ExternalSecret:ns/pullsecret" },
+      annotations: {
+        "argocd.argoproj.io/tracking-id": "argo-workflows-prod-euw2:ExternalSecret:ns/pullsecret",
+      },
     },
     spec: { target: { deletionPolicy: "Retain" } },
   });

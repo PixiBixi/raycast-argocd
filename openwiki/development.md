@@ -8,7 +8,8 @@ catches something the other four do not.
 ```sh
 npm test                      # vitest over src/lib, 485 tests
 npm run typecheck             # tsc --noEmit
-npm run lint                  # ray lint: manifest, icons, eslint, prettier
+npm run lint                  # ray lint: manifest, icons, eslint, prettier over src/
+npm run format:check          # prettier over everything else, tests and docs included
 npm run build                 # ray build: bundles every command with esbuild
 ./scripts/check-no-secrets.sh # the leak gate
 ```
@@ -16,6 +17,11 @@ npm run build                 # ray build: bundles every command with esbuild
 `npm run build` earns its place: it is the only thing that catches a command declared in
 `package.json` with no matching `src/<name>.tsx`. `npx ray lint --fix` applies the formatting
 and shortcut rewrites rather than reporting them.
+
+**`format:check` is not redundant with `lint`.** `ray lint` runs Prettier over `src/` only, so a
+tree that satisfies it can still fail `prettier --check .` on test and documentation files. That
+is exactly how the first CI run failed, on eight test files, after a local gate that reported
+clean. Run both, or use `npx prettier --write .` before committing.
 
 Both `ray lint` and `ray build` work offline and need no Raycast login.
 

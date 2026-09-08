@@ -95,7 +95,9 @@ describe("fetchOidcSettings", () => {
 
     const abort = vi
       .fn()
-      .mockRejectedValue(Object.assign(new Error("aborted"), { name: "TimeoutError" })) as unknown as typeof fetch;
+      .mockRejectedValue(
+        Object.assign(new Error("aborted"), { name: "TimeoutError" }),
+      ) as unknown as typeof fetch;
     await expect(fetchOidcSettings("https://argocd.example.com", { fetch: abort })).rejects.toThrowError(
       TimeoutError,
     );

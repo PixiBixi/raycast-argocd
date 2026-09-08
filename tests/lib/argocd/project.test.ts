@@ -500,7 +500,12 @@ describe("projectResourceDiff", () => {
     const huge = JSON.stringify(
       Object.fromEntries(Array.from({ length: 4200 }, (_, index) => [`key${index}`, index])),
     );
-    const projected = projectResourceDiff({ kind: "ConfigMap", name: "huge", liveState: huge, targetState: "{}" });
+    const projected = projectResourceDiff({
+      kind: "ConfigMap",
+      name: "huge",
+      liveState: huge,
+      targetState: "{}",
+    });
     expect(projected).toMatchObject({ tooLarge: true, modified: true, diff: "" });
   });
 
@@ -513,7 +518,11 @@ describe("projectResourceDiff", () => {
 describe("projectRevisionMetadata", () => {
   it("reads the author, the date and the trimmed message", () => {
     expect(
-      projectRevisionMetadata({ author: "Someone <a@example.com>", date: "2026-09-07T09:00:00Z", message: "fix\n" }),
+      projectRevisionMetadata({
+        author: "Someone <a@example.com>",
+        date: "2026-09-07T09:00:00Z",
+        message: "fix\n",
+      }),
     ).toEqual({ author: "Someone <a@example.com>", date: "2026-09-07T09:00:00Z", message: "fix" });
   });
 
