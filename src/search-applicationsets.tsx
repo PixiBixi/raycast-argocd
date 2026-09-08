@@ -1,6 +1,7 @@
 import { Action, ActionPanel, Color, Icon, List, useNavigation, Keyboard } from "@raycast/api";
 import { useEffect, useMemo, useState } from "react";
 import { appSetKey, rollupAppSet, type AppSetSummary } from "./lib/argocd/appset";
+import { AuthError } from "./lib/auth/provider";
 import type { AppSummary } from "./lib/argocd/types";
 import type { ArgoInstance } from "./lib/config/instances";
 import { rankAppSets } from "./lib/search/score";
@@ -72,6 +73,7 @@ export default function SearchApplicationSets() {
   }, [ranked]);
 
   const showInstance = states.length > 1;
+  const authFailures = states.filter((state) => state.error instanceof AuthError);
 
   return (
     <List
@@ -102,9 +104,17 @@ export default function SearchApplicationSets() {
       }
     >
       <List.EmptyView
-        icon={Icon.Layers}
-        title={emptyTitle(instances.length, apps.length, query)}
-        description={emptyDescription(instances.length, apps.length, query)}
+        icon={authFailures.length > 0 ? Icon.Key : Icon.Layers}
+        title={
+          authFailures.length > 0
+            ? `${authFailures.map((state) => state.instance.name).join(", ")} needs authentication`
+            : emptyTitle(instances.length, apps.length, query)
+        }
+        description={
+          authFailures.length > 0
+            ? authFailures.map((state) => state.error?.message ?? "").join("\n")
+            : emptyDescription(instances.length, apps.length, query)
+        }
         actions={
           <ActionPanel>
             <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={refresh} />
@@ -217,7 +227,7 @@ function sectionSubtitle(
   shown: number,
 ): string {
   if (state.error) {
-    return `${shown} shown, ${state.error.name}`;
+    return `${shown} shown, ${state.error instanceof AuthError ? "needs authentication" : state.error.name}`;
   }
   const derived = state.appSets.length - state.fromApi;
   if (state.fromApi === 0 && derived > 0) {

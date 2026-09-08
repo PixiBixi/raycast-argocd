@@ -39,7 +39,9 @@ function stateSubtitle(state: InstanceState): string {
     return age ? `cached ${age}, instance unreachable` : "instance unreachable";
   }
   if (state.error instanceof AuthError) {
-    return age ? `cached ${age}, session expired` : "session expired";
+    // Not "expired": there may never have been a session. The empty state carries the exact
+    // reason; this line only has room to say that credentials are the problem.
+    return age ? `cached ${age}, needs authentication` : "needs authentication";
   }
   if (state.error) {
     return age ? `cached ${age}, refresh failed` : "refresh failed";
@@ -104,26 +106,37 @@ export function ApplicationListView({
       searchBarAccessory={searchBarAccessory}
     >
       <List.EmptyView
-        icon={Icon.MagnifyingGlass}
+        icon={failing.length > 0 ? Icon.Key : Icon.MagnifyingGlass}
         title={
-          emptyTitle ??
-          (apps.length === 0 ? "No applications cached yet" : `Nothing matches "${query.trim()}"`)
-        }
-        description={
           failing.length > 0
-            ? `The session for ${failing.map((state) => state.instance.name).join(", ")} has expired.`
-            : "Refresh to query the instances again."
+            ? authTitle(failing)
+            : (emptyTitle ??
+              (apps.length === 0 ? "No applications cached yet" : `Nothing matches "${query.trim()}"`))
         }
+        // The error's own message says whether there is no session at all, an expired one, or
+        // no stored token. Replacing it with a guess is how "no credential" reads as "expired".
+        description={failing.length > 0 ? authDescription(failing) : "Refresh to query the instances again."}
         actions={
           <ActionPanel>
-            {failing.map((state) => (
-              <Action
-                key={state.instance.id}
-                title={`Log in to ${instanceHost(state.instance)}`}
-                icon={Icon.Person}
-                onAction={() => onLogin(state.instance)}
-              />
-            ))}
+            {failing.map((state) =>
+              // SSO login only helps an instance that reads the argocd CLI session. On a
+              // keychain instance the fix is to store a token, so that is what is offered.
+              state.instance.authMode === "cli" ? (
+                <Action
+                  key={state.instance.id}
+                  title={`Log in to ${instanceHost(state.instance)}`}
+                  icon={Icon.Person}
+                  onAction={() => onLogin(state.instance)}
+                />
+              ) : (
+                <Action.Open
+                  key={state.instance.id}
+                  title={`Set the API Token for ${state.instance.name}`}
+                  icon={Icon.Key}
+                  target="raycast://extensions/pixibixi/argocd/manage-instances"
+                />
+              ),
+            )}
             <Action title="Refresh All Instances" icon={Icon.ArrowClockwise} onAction={() => onRefresh()} />
           </ActionPanel>
         }
@@ -173,4 +186,20 @@ export function ApplicationListView({
       ) : null}
     </List>
   );
+}
+
+function authTitle(failing: InstanceState[]): string {
+  const names = failing.map((state) => state.instance.name).join(", ");
+  return failing.length === 1 ? `${names} needs authentication` : `${names} need authentication`;
+}
+
+/**
+ * Reports what the auth layer actually said, per instance. The distinction matters: "no argocd
+ * CLI session for this host" and "the session has expired" have different fixes, and neither is
+ * fixed by the action the other one needs.
+ */
+function authDescription(failing: InstanceState[]): string {
+  return failing
+    .map((state) => state.error?.message ?? `${state.instance.name} refused the request.`)
+    .join("\n");
 }

@@ -100,6 +100,33 @@ Accounts, pick an account that has the `apiKey` capability and generate a token.
 the `argocd.token` cookie of a logged-in web session is itself a valid bearer token, with that
 session's lifetime.
 
+### Bootstrapping a token when the CLI login is blocked
+
+`argocd account generate-token` needs a session of its own, which is the thing you do not have.
+The way out is the web session: log in to the ArgoCD web UI through your identity provider, open
+the developer tools, and copy the `argocd.token` cookie. That cookie **is** a valid bearer
+token, so it can be used directly:
+
+```sh
+argocd account generate-token \
+  --server argocd.example.com --grpc-web \
+  --auth-token "<the argocd.token cookie>" \
+  --account <account-with-apiKey>
+```
+
+That yields a long-lived token, and you only ever do it once per instance.
+
+Two things to know before you run it:
+
+- The account has to be listed in `argocd-cm` under `accounts.<name>` with the `apiKey`
+  capability, and your own RBAC has to allow `accounts, update` on it.
+- **It writes to the server.** The token id is stored in `argocd-secret`, so on an instance you
+  are only supposed to read, do not run it. Use the `argocd.token` cookie itself as the token
+  instead and accept that it expires with the web session, or get the CLI loopback redirect
+  registered so the CLI session mode works with no write at all.
+
+### Storing it
+
 Set the instance's authentication mode to `API token in the keychain`, then use **Set API
 token**. The token goes into the macOS keychain under the service `raycast-argocd`, keyed by the
 instance id. It is never written to Raycast's storage, which is not encrypted, never passed on a
@@ -224,7 +251,13 @@ confirmation naming the application, the instance and its environment.
 
 **"No argocd CLI session for <host>"** - the CLI has never logged in to that host. Run
 `argocd login <host> --sso --grpc-web`. A config that only lists `kubernetes` (from `--core`) or
-`localhost:8080` (from a port-forward) has no session for the host itself.
+`localhost:8080` (from a port-forward) has no session for the host itself, which is the usual
+shape when the CLI has only ever been used in core mode. Being logged in to `gcloud` or having a
+working `kubectl` is unrelated: those authenticate to the cluster, not to ArgoCD.
+
+**"No API token stored for <instance>"** - the instance is in keychain mode and the keychain has
+nothing for it. Use **Set API token** in Manage Instances. Check what is stored with
+`security find-generic-password -s raycast-argocd -a <instance-id> -w`.
 
 **Everything worked and now returns 401** - the OIDC token has a limited lifetime, typically one
 hour. Use **Log in with SSO** from the empty state or from Manage Instances.
