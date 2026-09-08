@@ -2,11 +2,11 @@
 
 Three modes. Only one of them never asks the operator for anything again, and it is the default.
 
-| Mode | Module | Renews itself | Needs from the identity provider |
-|---|---|---|---|
-| `sso` | [`auth/sso.ts`](../../src/lib/auth/sso.ts) | **Yes** | A public OIDC client, via `oidc.cliClientID` |
-| `cli` | [`auth/cliConfig.ts`](../../src/lib/auth/cliConfig.ts) | No | The same redirect URI, for `argocd login --sso` |
-| `token` | [`auth/keychain.ts`](../../src/lib/auth/keychain.ts) | No | Nothing |
+| Mode    | Module                                                 | Renews itself | Needs from the identity provider                |
+| ------- | ------------------------------------------------------ | ------------- | ----------------------------------------------- |
+| `sso`   | [`auth/sso.ts`](../../src/lib/auth/sso.ts)             | **Yes**       | A public OIDC client, via `oidc.cliClientID`    |
+| `cli`   | [`auth/cliConfig.ts`](../../src/lib/auth/cliConfig.ts) | No            | The same redirect URI, for `argocd login --sso` |
+| `token` | [`auth/secrets.ts`](../../src/lib/auth/secrets.ts)     | No            | Nothing                                         |
 
 [`auth/provider.ts`](../../src/lib/auth/provider.ts) dispatches on the instance's mode and is
 the only thing the client knows about. Every failure is an `AuthError` carrying the instance id
@@ -84,10 +84,18 @@ Read from the provider's own discovery document, which is public:
 them, because without the first there is no refresh token and without the second there is no id
 token to use as a bearer.
 
-### What is still unverified
+### What is still unverified, and currently unusable
 
-**The flow has never completed against the real provider**, because the public client does not
-exist yet. Every step is tested against stubs: 33 cases in
+**The flow has never completed against the real provider, and cannot be.** Probing the
+provider's authorize endpoint shows that the only redirect URI registered on ArgoCD's client is
+ArgoCD's own web callback: the loopback URI and Raycast's own
+(`https://raycast.com/redirect`) are both refused with "the redirect_uri parameter must be a
+Login redirect URI in the client app settings", while the web callback returns 200. Since no
+redirect URI can be added, no OIDC flow of this extension's own can run on that deployment.
+
+The mode is kept rather than removed because it is correct and tested, and it works on any
+ArgoCD whose identity provider does register the loopback URI, which is the same one
+`argocd login --sso` needs. Every step is tested against stubs: 33 cases in
 [`tests/lib/auth/oidc.test.ts`](../../tests/lib/auth/oidc.test.ts) and 15 in
 [`tests/lib/auth/sso.test.ts`](../../tests/lib/auth/sso.test.ts), including that the verifier
 never appears in the authorization request, that no `client_secret` is ever sent, and that no
@@ -111,48 +119,46 @@ port-forward) has no session for the host itself, which is the usual shape when 
 ever been used in core mode. Being logged in to `gcloud`, or having a working `kubectl`, is
 unrelated: those authenticate to the cluster, not to ArgoCD.
 
-## The keychain, and two bugs worth remembering
+## Where credentials live
 
-Raycast's `LocalStorage` is not encrypted, so it is the wrong home for a credential. Both the
-API token and the SSO session live in the macOS keychain under service `raycast-argocd`, keyed
-by instance id, with the session under `<id>.sso` so the two never collide. Reached through
-`/usr/bin/security`, a system binary, which keeps the extension free of native dependencies
-Raycast could not bundle.
+Both the API token and the single sign-on session live in Raycast's own storage, which its
+documentation describes as a "local encrypted database" whose contents "can only be accessed by
+the corresponding extension", and which names `password` preferences as the way to ask for
+"values such as access tokens".
 
-Two things went wrong here, and both guards are still in the code.
+[`lib/auth/secrets.ts`](../../src/lib/auth/secrets.ts) owns the key naming and the validation
+and takes the store as an argument, so both are tested without Raycast.
+[`ui/storage.ts`](../../src/ui/storage.ts) supplies the real one over `LocalStorage`.
 
-**The write stored nothing and reported success.** `security add-generic-password -w`, with `-w`
-given no value, prompts **twice**: "password data for new item" then "retype password for new
-item". Feeding the token to stdin once made `security` print "passwords don't match", store an
+### It used to be the macOS keychain, and that was a mistake three times over
+
+The keychain was chosen on the belief that Raycast's storage was unencrypted. That belief was
+asserted, in a code comment, without being checked, and it is wrong. The cost was not
+theoretical:
+
+**It stored nothing and reported success.** `security add-generic-password -w`, with `-w` given
+no value, prompts **twice**: "password data for new item" then "retype password for new item".
+Feeding the token to stdin once made `security` print "passwords don't match", store an
 **empty** password, and exit **0**. The success toast fired on that exit code, so the operator
-was told the token was saved while the keychain held an empty string.
+was told the token was saved while the store held an empty string.
 
 **Then the stdin fix worked in a shell and not in Raycast.** Feeding the value twice was
 verified against the real binary from a terminal, and inside Raycast the item was still created
 empty. Not the missing controlling terminal, which was ruled out by forking, calling `setsid`,
-confirming `/dev/tty` was no longer openable, and writing anyway: it stored the value.
-`execFileAsync` wrote the input with `child.stdin?.end(input)`, and that optional chain writes
-nothing and reports nothing when stdin is unavailable. A silent no-op in the code whose one job
-was to deliver the secret.
+confirming `/dev/tty` was no longer openable, and writing anyway: it stored the value. The
+cause was `child.stdin?.end(input)` in `execFileAsync`, an optional chain that writes nothing
+and reports nothing when stdin is unavailable. A silent no-op in the code whose one job was to
+deliver the secret. The resolution at the time was to pass the token through **argv**, where
+any same-uid process could read it with `ps`.
 
-The resolution:
+**And it would have been rejected from the store.** The Raycast checklist says extensions
+requesting Keychain Access are refused, and names the preferences API as the sanctioned place
+for credentials. So the detour ended where it should have started.
 
-- The token is passed in **argv**. `security` cannot read a password from a file descriptor, and
-  the prompt form does not receive stdin inside Raycast. The exposure this accepts is stated
-  rather than glossed over: for one short-lived process the token is visible to same-uid
-  processes, which is the boundary that already governs the stored item, since
-  `security find-generic-password -w` hands it to any same-uid process without a prompt. macOS
-  does not expose another user's argv without root.
-- `execFileAsync` in [`ui/deps.ts`](../../src/ui/deps.ts) **rejects** when a caller supplies
-  `input` and the child has no stdin, instead of quietly skipping the write.
-- `writeKeychainToken` **reads the value back** and throws if it differs. An exit code of 0 from
-  `security` is not evidence that anything was stored. The failure modes are reported apart: a
-  read that errored, an absent item, and a differing value, the last naming **lengths only**
-  since the message reaches a toast.
-
-The test for this runs against a fake `security` reproducing the store-nothing-and-exit-0
-behaviour. The previous test asserted only that the token was absent from argv, never that it
-arrived, which is exactly why it could not catch the bug.
+One habit is worth keeping from it. `writeVerified` **reads the value back** and throws if it
+differs, because a write whose effect is never checked is how "stored" came to mean "the call
+returned", twice. The same reasoning kills the argv exposure, the `security` dependency, the
+double-prompt, and the read-back's original reason all at once.
 
 ## Rules that apply to any change here
 
@@ -160,10 +166,10 @@ arrived, which is exactly why it could not catch the bug.
   assert this on the client and on both providers. Where a diagnostic needs to compare values,
   report lengths.
 - **Never trust an exit code or a status as evidence of an effect.** Read back what you wrote.
-- **The action offered must match the instance's mode.** An SSO login on a keychain instance
+- **The action offered must match the instance's mode.** An SSO login on a token instance
   cannot help, and an earlier version offered exactly that.
-- **Relevant checks**: `npm test` covers `oidc`, `session`, `sso`, `provider`, `keychain`,
-  `cliConfig`, `login` and `settings`. None of them touch a real provider or a real keychain, so
-  a change to the keychain argv or the token exchange is worth a manual round trip against the
-  real `security` binary, the way A6, A7 and A11 in the
-  [implementation plan](../../docs/superpowers/plans/2026-09-08-raycast-argocd.md) describe.
+- **Relevant checks**: `npm test` covers `oidc`, `session`, `sso`, `provider`, `secrets`,
+  `cliConfig`, `login` and `settings`. None of them touch a real provider, so the first real
+  login remains the first real test of the exchange. A6, A7, A11 and A12 in the
+  [implementation plan](../../docs/superpowers/plans/2026-09-08-raycast-argocd.md) record how
+  each of these was got wrong before.

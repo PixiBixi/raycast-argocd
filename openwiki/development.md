@@ -6,7 +6,7 @@ Everything below has to pass before a commit. Nothing here is optional, and each
 catches something the other four do not.
 
 ```sh
-npm test                      # vitest over src/lib, 476 tests
+npm test                      # vitest over src/lib, 469 tests
 npm run typecheck             # tsc --noEmit
 npm run lint                  # ray lint: manifest, icons, eslint, prettier
 npm run build                 # ray build: bundles every command with esbuild
@@ -63,7 +63,7 @@ imitating:
 The keychain bug is the cautionary tale. Its original test asserted only that the token was
 absent from argv, never that it arrived, which is exactly why it could not catch a write that
 stored nothing. See
-[authentication](domain/authentication.md#the-keychain-and-two-bugs-worth-remembering).
+[authentication](domain/authentication.md#it-used-to-be-the-macos-keychain-and-that-was-a-mistake-three-times-over).
 
 ## The leak gate
 
@@ -146,26 +146,18 @@ Not done, and not a formality. Read the
 [store checklist](https://developers.raycast.com/basics/prepare-an-extension-for-store) before
 starting, because one of its rules cuts across the whole design.
 
-### The keychain is a rejection
+### The keychain rejection, resolved
+
+The checklist says:
 
 > Extensions requesting Keychain Access will be rejected due to security concerns.
 
-That is every credential this extension stores: the API token and the single sign-on session
-both live in the keychain, reached through `/usr/bin/security`. The same page names the
-sanctioned alternative, "use preferences API for configuration and credentials", which does not
-model a variable number of instances and is exactly why the keychain was chosen. See
-[authentication](domain/authentication.md).
-
-There is one interpretive doubt worth recording: the rule may target the macOS Keychain Access
-entitlement rather than a shell-out to `security`. Shelling out to `security` is how a process
-reaches the keychain without that entitlement, so treat it as a blocker until a reviewer says
-otherwise.
-
-The way out is `OAuth.PKCEClient`, Raycast's own encrypted token store, which is designed for
-this. It would replace the keychain for the session, at the cost of Raycast's redirect
-(`https://raycast.com/redirect`) instead of the loopback `http://localhost:8085/auth/callback`,
-so that is the URI the identity provider would have to register. For a public extension that is
-the right trade anyway.
+That used to describe every credential this extension stored. It no longer does: credentials
+live in Raycast's own encrypted, extension-private storage, which the same documentation names
+as the sanctioned place for access tokens. The keychain, and the shell-out to
+`/usr/bin/security` that reached it, are gone. See
+[authentication](domain/authentication.md#where-credentials-live) for what that detour cost
+before it was removed.
 
 ### The rest of the checklist
 

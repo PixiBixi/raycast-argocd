@@ -1475,3 +1475,48 @@ serves both.
 `sign in needed` per instance so the state is visible before it fails. The login action offered
 anywhere in the UI matches the instance's mode, since offering an SSO flow to a keychain
 instance was an earlier version's mistake.
+
+### A12: the keychain existed for nothing
+
+Publishing to the Raycast store was raised as a later step, so the checklist was read early.
+It says:
+
+> Extensions requesting Keychain Access will be rejected due to security concerns.
+
+That was every credential this extension stored. Reading further, the same documentation names
+the sanctioned alternative and, in doing so, disproves the premise the keychain was built on:
+extension data "is stored in the local encrypted database and can only be accessed by the
+corresponding extension", and "**password** preferences can be used to ask users for values
+such as access tokens".
+
+A6 opens with the sentence "Raycast's LocalStorage is not encrypted, so it is the wrong home
+for a credential". That was written into a code comment and a design document without being
+checked, and it is false. Everything the keychain cost followed from it:
+
+- the write that stored nothing and exited 0 (A6),
+- the stdin fix that worked in a shell and not in Raycast (A7),
+- the token passed through argv, where any same-uid process could read it with `ps`,
+- and a store rejection.
+
+**Changes applied.** `src/lib/auth/keychain.ts` and its test are deleted, along with
+`execFileAsync`, which had no other caller. `src/lib/auth/secrets.ts` replaces them: it owns the
+key naming, refuses an empty or multi-line token, and takes the store as an argument, so the
+whole contract is tested against an in-memory map. `src/ui/storage.ts` supplies the real store
+over `LocalStorage`. The session moves with it, under its own key per instance so the two cannot
+collide. Every user-facing mention of the keychain is gone from the manifest, the forms, the
+toasts, the README and the wiki.
+
+One thing survives the removal on purpose. `writeVerified` reads the value back and throws if it
+differs. Not because `LocalStorage` lies the way an exit code did, but because a write whose
+effect is never checked is how "stored" came to mean "the call returned", twice in this file's
+history.
+
+**And a separate finding, recorded here because it lands on the same feature.** The single
+sign-on mode cannot run on the target deployment at all. Probing the provider's authorize
+endpoint with each candidate redirect URI shows that only ArgoCD's own web callback is
+registered: the loopback URI and `https://raycast.com/redirect` are both refused with "the
+redirect_uri parameter must be a Login redirect URI in the client app settings", while the web
+callback returns 200, which proves the probe method sound. No redirect URI can be added on that
+provider, so neither the loopback flow nor Raycast's `OAuth.PKCEClient` is available there. The
+mode is kept rather than deleted because it is correct, tested, and works on any ArgoCD whose
+provider registers the loopback URI, which is the same one `argocd login --sso` requires.

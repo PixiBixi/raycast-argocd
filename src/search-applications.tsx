@@ -51,7 +51,7 @@ export default function SearchApplications() {
       });
       try {
         // The two modes need different logins, and offering the wrong one is how an earlier
-        // version told a keychain instance to run an SSO flow that could not help it.
+        // version told a token instance to run an SSO flow that could not help it.
         if (instance.authMode === "sso") {
           const { session } = await loginWithSso(instance);
           await writeSsoSession(instance.id, session);

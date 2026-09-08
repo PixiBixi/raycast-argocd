@@ -81,7 +81,7 @@ export function serializeSession(session: SsoSession): string {
 }
 
 /**
- * Reads a stored session back. Storage is a keychain item a human can edit, so anything that
+ * Reads a stored session back. Storage is not something to trust blindly, so anything that
  * does not carry an id token is discarded rather than repaired.
  */
 export function parseSession(raw: string | undefined): SsoSession | undefined {
@@ -114,9 +114,4 @@ export function parseSession(raw: string | undefined): SsoSession | undefined {
     issuer: typeof value.issuer === "string" ? value.issuer : "",
     clientId: typeof value.clientId === "string" ? value.clientId : "",
   };
-}
-
-/** How the session sits next to the API token in the keychain, under one account per instance. */
-export function sessionAccount(instanceId: string): string {
-  return `${instanceId}.sso`;
 }

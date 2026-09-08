@@ -1,11 +1,17 @@
 /**
- * Everything the extension persists through Raycast, which is user data and never a secret:
- * LocalStorage is not encrypted, so API tokens live in the keychain instead (lib/auth/keychain).
+ * Everything the extension persists through Raycast, credentials included.
+ *
+ * Raycast's documentation describes this storage as a "local encrypted database" whose contents
+ * "can only be accessed by the corresponding extension", and names `password` preferences as
+ * the way to ask for "values such as access tokens". An earlier version of this file asserted
+ * the opposite and sent credentials through the macOS keychain instead; that claim was never
+ * checked and was wrong. See lib/auth/secrets.ts.
  */
 
 import { LocalStorage } from "@raycast/api";
 import { parseInstances, serializeInstances, type ArgoInstance } from "../lib/config/instances";
 import { UNKNOWN_REACHABILITY, type Reachability } from "../lib/argocd/probe";
+import type { SecretStore } from "../lib/auth/secrets";
 
 const INSTANCES_KEY = "instances/v1";
 const RECENTS_KEY = "recents/v1";
@@ -76,3 +82,13 @@ export async function loadScope(): Promise<string> {
 export async function saveScope(scope: string): Promise<void> {
   await LocalStorage.setItem(SCOPE_KEY, scope);
 }
+
+/**
+ * The credential store the auth layer is given. Raycast keeps these in the same encrypted,
+ * extension-private database as everything else above.
+ */
+export const secretStore: SecretStore = {
+  read: (key) => LocalStorage.getItem<string>(key),
+  write: (key, value) => LocalStorage.setItem(key, value),
+  clear: (key) => LocalStorage.removeItem(key),
+};

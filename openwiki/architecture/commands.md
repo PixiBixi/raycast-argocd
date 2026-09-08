@@ -109,7 +109,7 @@ Production is read-only, and that is enforced three times over.
 2. **With writes off, the sync actions do not exist in the UI.** `ApplicationDetail` renders
    that whole `ActionPanel.Section` conditionally.
 3. **The client refuses independently.** `ArgoClient.sync` throws `ReadOnlyInstanceError`
-   *before it builds a request*, and a test asserts `fetch` is never called. The duplication is
+   _before it builds a request_, and a test asserts `fetch` is never called. The duplication is
    the point: a UI regression must not be able to produce a write against production.
 
 Server-side RBAC remains the real control. These guards keep an accidental keystroke from
@@ -139,4 +139,4 @@ form, meaning "sync with the application's own settings". A `Form.Description` s
 - **`filtering={false}` is deliberate** on both list commands. Turning Raycast's filtering back
   on would render every row.
 - **An action offered must match the instance's auth mode.** An earlier version offered an SSO
-  login on a keychain instance, where it cannot help.
+  login on a token instance, where it cannot help.

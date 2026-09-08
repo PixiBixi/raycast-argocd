@@ -8,17 +8,17 @@ command gets a 100 MB JS heap**, and one applications list does not fit in it.
 Taken against a real instance holding 2053 applications, with
 `node --max-old-space-size=100`, before and after the fix. Not estimated.
 
-| | |
-|---|---|
-| Compact JSON of the full applications list | 30.2 MB |
+|                                                          |             |
+| -------------------------------------------------------- | ----------- |
+| Compact JSON of the full applications list               | 30.2 MB     |
 | The same list gzipped, which is what crosses the network | **2.97 MB** |
-| `JSON.parse` of the whole list | 85 ms |
-| Peak heap holding the body (`response.json()`) | **58 MB** |
-| Peak heap streaming and projecting element by element | **35 MB** |
-| Peak heap for two instances read one after the other | 43 MB |
-| The projection that gets cached | 1.49 MB |
-| Applications the projection drops | 0 of 2053 |
-| Ranking the whole corpus, worst case | 7.4 ms |
+| `JSON.parse` of the whole list                           | 85 ms       |
+| Peak heap holding the body (`response.json()`)           | **58 MB**   |
+| Peak heap streaming and projecting element by element    | **35 MB**   |
+| Peak heap for two instances read one after the other     | 43 MB       |
+| The projection that gets cached                          | 1.49 MB     |
+| Applications the projection drops                        | 0 of 2053   |
+| Ranking the whole corpus, worst case                     | 7.4 ms      |
 
 58 MB for one instance is why two instances refreshing in parallel hit the limit and Raycast
 killed the command. The transfer was never the problem; **holding** the response was.

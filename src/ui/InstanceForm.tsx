@@ -107,11 +107,11 @@ export function InstanceForm({ instances, editing, onSaved }: Props) {
         title="Authentication"
         value={authMode}
         onChange={(value) => setAuthMode(value as AuthMode)}
-        info="Single sign-on logs in once in a browser and renews itself from the refresh token, so nothing is ever asked again. It needs a public OIDC client, which ArgoCD takes from oidc.cliClientID. The other two modes exist for instances where that is not set. See the README."
+        info="Single sign-on logs in once in a browser and renews itself from the refresh token, so nothing is ever asked again. It needs a public OIDC client, which ArgoCD takes from oidc.cliClientID, and that client must register the loopback redirect. The other two modes exist where it does not. See the README."
       >
         <Form.Dropdown.Item value="sso" title="Single sign-on, renewed silently" icon={Icon.Fingerprint} />
         <Form.Dropdown.Item value="cli" title="argocd CLI session" icon={Icon.Terminal} />
-        <Form.Dropdown.Item value="token" title="API token in the keychain" icon={Icon.Key} />
+        <Form.Dropdown.Item value="token" title="API token" icon={Icon.Key} />
       </Form.Dropdown>
       {authMode === "sso" ? (
         <Form.Description

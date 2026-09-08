@@ -121,7 +121,7 @@ export function ApplicationListView({
             {failing.map((state) =>
               // The offered action has to match the instance's mode: a browser sign-in for
               // single sign-on, a CLI login for the CLI session, and storing a token for the
-              // keychain, where neither login helps.
+              // token mode, where neither login helps.
               state.instance.authMode === "token" ? (
                 <Action.Open
                   key={state.instance.id}

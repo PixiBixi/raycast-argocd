@@ -8,7 +8,7 @@
  * no toast and no expiry to notice.
  *
  * All the outside world is injected, so the whole renewal policy is tested without a network,
- * a keychain or a clock.
+ * a store or a clock.
  */
 
 import type { ArgoInstance } from "../config/instances";

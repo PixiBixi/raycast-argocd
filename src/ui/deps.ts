@@ -4,66 +4,60 @@
  * arguments, which is what keeps it testable.
  */
 
-import { execFile } from "node:child_process";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { environment } from "@raycast/api";
 import { join } from "node:path";
 import { ArgoClient, type ClientDeps } from "../lib/argocd/client";
 import { fetchOidcSettings } from "../lib/argocd/settings";
 import { discover, refreshTokens } from "../lib/auth/oidc";
-import { parseSession, serializeSession, sessionAccount, type SsoSession } from "../lib/auth/session";
+import { parseSession, serializeSession, type SsoSession } from "../lib/auth/session";
 import { createSsoTokenReader } from "../lib/auth/sso";
 import { probeInstance, type Reachability } from "../lib/argocd/probe";
 import { ProjectionCache } from "../lib/cache/store";
 import { readCliToken } from "../lib/auth/cliConfig";
-import { deleteKeychainToken, readKeychainToken, writeKeychainToken, type Exec } from "../lib/auth/keychain";
+import {
+  clearInstanceSecrets,
+  clearSession,
+  readSessionRaw,
+  readToken,
+  writeSessionRaw,
+  writeToken,
+} from "../lib/auth/secrets";
 import { createTokenProvider } from "../lib/auth/provider";
 import { runSsoLogin } from "../lib/auth/login";
 import type { ArgoInstance } from "../lib/config/instances";
 import { readPreferences } from "./preferences";
+import { secretStore } from "./storage";
 
 /**
- * execFile, never exec: arguments are passed as an array so a value carrying a shell
- * metacharacter stays an argument instead of becoming a command.
- */
-export const execFileAsync: Exec = (file, args, opts) =>
-  new Promise((resolve, reject) => {
-    const child = execFile(file, args, { maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
-      const code = typeof error?.code === "number" ? error.code : error ? 1 : 0;
-      if (error && code === 0) {
-        reject(error);
-        return;
-      }
-      resolve({ stdout: String(stdout), stderr: String(stderr), code });
-    });
-    if (opts?.input !== undefined) {
-      // Not `child.stdin?.end(...)`: when stdin is unavailable the optional chain writes
-      // nothing and reports nothing, and the child then runs against no input at all. That is
-      // how a keychain write silently stored an empty password.
-      if (!child.stdin) {
-        reject(new Error(`Cannot write to the stdin of ${file}: the child has no stdin stream.`));
-        return;
-      }
-      child.stdin.end(opts.input);
-    }
-  });
-
-/**
- * The SSO session lives in the keychain beside the API token, under its own account, and is
- * renewed here rather than anywhere the operator can see. Nothing about the provider is
- * hardcoded: it all comes from the instance's own settings endpoint.
+ * The credential accessors. Both live in Raycast's encrypted, extension-private storage, and
+ * the SSO session is renewed here rather than anywhere the operator can see. Nothing about the
+ * provider is hardcoded: it all comes from the instance's own settings endpoint.
  */
 export async function readSsoSession(instanceId: string): Promise<SsoSession | undefined> {
-  return parseSession(await readKeychainToken(sessionAccount(instanceId), execFileAsync));
+  return parseSession(await readSessionRaw(secretStore, instanceId));
 }
 
 export async function writeSsoSession(instanceId: string, session: SsoSession): Promise<void> {
-  await writeKeychainToken(sessionAccount(instanceId), serializeSession(session), execFileAsync);
+  await writeSessionRaw(secretStore, instanceId, serializeSession(session));
 }
 
 export async function clearSsoSession(instanceId: string): Promise<void> {
-  await deleteKeychainToken(sessionAccount(instanceId), execFileAsync);
+  await clearSession(secretStore, instanceId);
+}
+
+export function readApiToken(instanceId: string): Promise<string | undefined> {
+  return readToken(secretStore, instanceId);
+}
+
+export function writeApiToken(instanceId: string, raw: string): Promise<void> {
+  return writeToken(secretStore, instanceId, raw);
+}
+
+/** Called when an instance is removed, so nothing it owned is left behind. */
+export function clearSecrets(instanceId: string): Promise<void> {
+  return clearInstanceSecrets(secretStore, instanceId);
 }
 
 const readSsoToken = createSsoTokenReader({
@@ -79,7 +73,7 @@ const readSsoToken = createSsoTokenReader({
 
 export const getToken = createTokenProvider({
   readCliToken: (host) => readCliToken(host),
-  readKeychainToken: (instanceId) => readKeychainToken(instanceId, execFileAsync),
+  readStoredToken: readApiToken,
   readSsoToken,
   now: () => new Date(),
 });

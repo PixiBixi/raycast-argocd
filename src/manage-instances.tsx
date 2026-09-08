@@ -15,11 +15,17 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { UNKNOWN_REACHABILITY, type Reachability } from "./lib/argocd/probe";
 import { instanceHost, removeInstance, upsertInstance, type ArgoInstance } from "./lib/config/instances";
-import { deleteKeychainToken, readKeychainToken, writeKeychainToken } from "./lib/auth/keychain";
 import { InstanceForm } from "./ui/InstanceForm";
 import { loginWithSso } from "./ui/oidcLogin";
-import { clearSsoSession, readSsoSession, writeSsoSession } from "./ui/deps";
-import { execFileAsync, probe, ssoLogin } from "./ui/deps";
+import {
+  clearSecrets,
+  clearSsoSession,
+  readApiToken,
+  readSsoSession,
+  writeApiToken,
+  writeSsoSession,
+} from "./ui/deps";
+import { probe, ssoLogin } from "./ui/deps";
 import { loadInstances, loadReachability, saveInstances, saveReachability } from "./ui/storage";
 import { environmentColor, reachabilityIcon, reachabilityText } from "./ui/statusVisuals";
 
@@ -79,8 +85,8 @@ export default function ManageInstances() {
       return;
     }
     await persist(removeInstance(instances, instance.id));
-    // The keychain entry has no other owner, so it goes with the instance.
-    await deleteKeychainToken(instance.id, execFileAsync).catch(() => undefined);
+    // The stored credentials have no other owner, so they go with the instance.
+    await clearSecrets(instance.id).catch(() => undefined);
     await showToast({ style: Toast.Style.Success, title: `Removed ${instance.name}` });
   }
 
@@ -246,11 +252,8 @@ export default function ManageInstances() {
                       icon={Icon.Trash}
                       style={Action.Style.Destructive}
                       onAction={async () => {
-                        await deleteKeychainToken(instance.id, execFileAsync);
-                        await showToast({
-                          style: Toast.Style.Success,
-                          title: "Token removed from the keychain",
-                        });
+                        await clearSecrets(instance.id);
+                        await showToast({ style: Toast.Style.Success, title: "Token removed" });
                       }}
                     />
                   ) : null}
@@ -286,8 +289,8 @@ function TokenForm({ instance }: { instance: ArgoInstance }) {
   const [hasExisting, setHasExisting] = useState(false);
 
   useEffect(() => {
-    void readKeychainToken(instance.id, execFileAsync)
-      .then((existing) => setHasExisting(existing !== undefined))
+    void readApiToken(instance.id)
+      .then((existing: string | undefined) => setHasExisting(existing !== undefined))
       .catch(() => setHasExisting(false));
   }, [instance.id]);
 
@@ -297,7 +300,7 @@ function TokenForm({ instance }: { instance: ArgoInstance }) {
       actions={
         <ActionPanel>
           <Action.SubmitForm
-            title="Store in Keychain"
+            title="Store Token"
             icon={Icon.Key}
             onSubmit={async () => {
               const trimmed = token.trim();
@@ -306,10 +309,10 @@ function TokenForm({ instance }: { instance: ArgoInstance }) {
                 return;
               }
               try {
-                // writeKeychainToken reads the value back before it returns, so reaching this
-                // toast means the keychain really holds the token. `security` exits 0 even when
-                // it stored nothing, so an earlier version announced success on an empty write.
-                await writeKeychainToken(instance.id, trimmed, execFileAsync);
+                // writeApiToken reads the value back before it returns, so reaching this toast
+                // means the store really holds the token. That habit is inherited from a
+                // keychain write that announced success having stored nothing.
+                await writeApiToken(instance.id, trimmed);
               } catch (error) {
                 await showToast({
                   style: Toast.Style.Failure,
@@ -318,7 +321,7 @@ function TokenForm({ instance }: { instance: ArgoInstance }) {
                 });
                 return;
               }
-              await showToast({ style: Toast.Style.Success, title: "Token stored in the keychain" });
+              await showToast({ style: Toast.Style.Success, title: "Token stored" });
               pop();
             }}
           />
@@ -327,7 +330,7 @@ function TokenForm({ instance }: { instance: ArgoInstance }) {
     >
       <Form.Description
         title="Where it is stored"
-        text={`The token goes into the macOS keychain under the service raycast-argocd, never into Raycast's storage.${
+        text={`In Raycast's encrypted storage, which only this extension can read.${
           hasExisting ? " A token is already stored for this instance and will be replaced." : ""
         }`}
       />

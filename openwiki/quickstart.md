@@ -57,9 +57,9 @@ Declared in [`package.json`](../package.json); each `name` maps to `src/<name>.t
 
 ```
 src/
-  lib/            pure TypeScript, no @raycast/api import, all 476 tests live here
+  lib/            pure TypeScript, no @raycast/api import, all 469 tests live here
     argocd/       REST client, streaming projector, probe, sync builder, ApplicationSets
-    auth/         OIDC with silent renewal, keychain, argocd CLI session, token provider
+    auth/         OIDC with silent renewal, secret storage, argocd CLI session, provider
     cache/        the on-disk projection cache
     config/       instance registry and preference clamping
     diff/         line diff and manifest rendering, because ArgoCD does not send a diff
@@ -90,14 +90,16 @@ explains it.
 
 ## One recurring failure worth knowing about
 
-Four separate bugs in this repository came from the same mistake: **a field being declared, or
-a parameter being accepted, was treated as evidence that the server does something with it.**
+Five separate bugs in this repository came from the same mistake: **something plausible was
+treated as evidence, without being checked.**
 
 - The ArgoCD web UI sends a `fields` query parameter; the server ignores it.
 - `ResourceDiff` declares a `diff` field; the server does not populate it.
 - `/api/v1/version` looks like the version endpoint; it is a 404, and the real path is
   `/api/version`.
 - `security add-generic-password` exits 0 after storing nothing.
+- Raycast's storage was called unencrypted in a code comment. It is encrypted and
+  extension-private, and the whole detour through the macOS keychain existed for nothing.
 
 Each is documented where it applies, in [the ArgoCD API page](domain/argocd-api.md) and
 [authentication](domain/authentication.md). The general lesson is in the code as comments
@@ -109,10 +111,11 @@ thing it claims to have done will eventually claim something false.**
 Three things are unverified rather than unknown, and are stated here so nobody assumes
 otherwise.
 
-- **The single sign-on flow has never completed against the real identity provider.**
-  `oidc.cliClientID` is null on both instances, so the public client it needs does not exist
-  yet. The flow is tested end to end against stubs. See
-  [authentication](domain/authentication.md#what-is-still-unverified).
+- **Single sign-on cannot run on the target deployment.** Probing the provider shows the only
+  redirect URI registered on ArgoCD's client is ArgoCD's own web callback; the loopback URI and
+  Raycast's own are both refused, and no redirect URI can be added. The mode is correct and
+  tested and works wherever the loopback URI is registered, but there it is unusable. See
+  [authentication](domain/authentication.md#what-is-still-unverified-and-currently-unusable).
 - **`ArgoClient.resourceUrl` is inferred.** Its deep-link shape was read off an observed
   browser URL and has not been confirmed to select the right resource.
 - **ApplicationSets on production are unmeasured.** The development instance returns an empty

@@ -21,7 +21,7 @@ function instance(overrides: Partial<ArgoInstance> = {}): ArgoInstance {
 function deps(overrides: Partial<TokenProviderDeps> = {}): TokenProviderDeps {
   return {
     readCliToken: vi.fn().mockResolvedValue(undefined),
-    readKeychainToken: vi.fn().mockResolvedValue(undefined),
+    readStoredToken: vi.fn().mockResolvedValue(undefined),
     now: () => NOW,
     ...overrides,
   };
@@ -66,13 +66,13 @@ describe("cli auth mode", () => {
 });
 
 describe("token auth mode", () => {
-  it("returns the keychain token and never touches the CLI config", async () => {
-    const d = deps({ readKeychainToken: vi.fn().mockResolvedValue(SECRET) });
+  it("returns the stored token and never touches the CLI config", async () => {
+    const d = deps({ readStoredToken: vi.fn().mockResolvedValue(SECRET) });
     await expect(createTokenProvider(d)(instance({ authMode: "token" }))).resolves.toBe(SECRET);
     expect(d.readCliToken).not.toHaveBeenCalled();
   });
 
-  it("throws when the keychain holds nothing", async () => {
+  it("throws when the store holds nothing", async () => {
     const provider = createTokenProvider(deps());
     await expect(provider(instance({ authMode: "token" }))).rejects.toThrowError(/Manage Instances/);
   });

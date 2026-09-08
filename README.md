@@ -50,11 +50,11 @@ Stored in Raycast's local storage. Nothing leaves the Mac, and no hostname is co
 
 ## 🔐 Authentication
 
-| Mode                      | Renews itself     | Setup                                  |
-| ------------------------- | ----------------- | -------------------------------------- |
-| 🥇 Single sign-on         | **Yes**, silently | One browser login. Default.            |
-| argocd CLI session        | No                | `argocd login <host> --sso --grpc-web` |
-| API token in the keychain | No                | **Set API token** in Manage Instances  |
+| Mode               | Renews itself     | Setup                                  |
+| ------------------ | ----------------- | -------------------------------------- |
+| 🥇 Single sign-on  | **Yes**, silently | One browser login. Default.            |
+| argocd CLI session | No                | `argocd login <host> --sso --grpc-web` |
+| API token          | No                | **Set API token** in Manage Instances  |
 
 **Single sign-on** needs a public OIDC client once, because ArgoCD's web client is confidential:
 create a public client with PKCE and the redirect URI `http://localhost:8085/auth/callback`,
@@ -73,12 +73,9 @@ Without `--expires-in` it never expires. That command needs a session itself, so
 from the web UI: copy the `argocd.token` cookie and pass it as `--auth-token`. ⚠️ Generating a
 token **writes** to `argocd-secret`, so do not run it against an instance you may only read.
 
-Inspect or remove what is stored:
-
-```sh
-security find-generic-password -s raycast-argocd -a <instance-id> -w
-security delete-generic-password -s raycast-argocd -a <instance-id>
-```
+Set the instance's mode to `API token`, then **Set API token**. It goes into Raycast's own
+encrypted storage, which only this extension can read, and the write is verified by reading it
+back before success is reported. **Clear API token** removes it.
 
 ## 🎛️ Preferences
 
@@ -169,7 +166,7 @@ second and lists still render from cache. `⌘T` re-probes; the result is cached
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | "There is no single sign-on session yet" | **Log in with single sign-on**. If it fails naming `oidc.cliClientID`, the provider client is not public yet.                                                                                                   |
 | "No argocd CLI session for \<host\>"     | `argocd login <host> --sso --grpc-web`. A config listing only `kubernetes` or `localhost:8080` has no session for the host. `gcloud` and `kubectl` are unrelated: they authenticate to the cluster, not ArgoCD. |
-| "No API token stored"                    | **Set API token**. An empty answer from `security find-generic-password` means the item exists with an empty password, which counts as none.                                                                    |
+| "No API token stored"                    | **Set API token**. An empty or missing value counts as no token, and a store is verified by reading it back.                                                                                                    |
 | 🔴 "unreachable, check your VPN"         | Connect the VPN, then `⌘T` in Manage Instances or `⌘⇧R` in the search command.                                                                                                                                  |
 | 🟠 amber dot with a status               | The instance answered something other than 2xx on `/api/version`. Usually the URL points at something that is not an ArgoCD.                                                                                    |
 | "cached 12 min ago, refresh failed"      | The cached list is shown on purpose. The reason is in the section subtitle; `⌘R` retries that instance alone.                                                                                                   |
@@ -191,11 +188,11 @@ the repository conventions: [`openwiki/development.md`](openwiki/development.md)
 |                                                                     |                                                                     |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | 🧭 [Quickstart](openwiki/quickstart.md)                             | What this is, the four constraints that shaped it, where to go next |
-| 🏗️ [Layering](openwiki/architecture/layering.md)                    | The `lib`/`ui` boundary and why 476 tests need no Raycast runtime   |
+| 🏗️ [Layering](openwiki/architecture/layering.md)                    | The `lib`/`ui` boundary and why 469 tests need no Raycast runtime   |
 | ⚡ [Read path](openwiki/architecture/read-path.md)                  | The 100 MB heap limit, streaming, the cache, capped rendering       |
 | 🧩 [Commands](openwiki/architecture/commands.md)                    | The four commands, their views, the three write guards              |
 | ⚠️ [What the ArgoCD API does not do](openwiki/domain/argocd-api.md) | Four things it appears to do and does not. Read this first.         |
-| 🔐 [Authentication](openwiki/domain/authentication.md)              | The three modes, the provider findings, the keychain                |
+| 🔐 [Authentication](openwiki/domain/authentication.md)              | The three modes, the provider findings, where credentials live      |
 | 🧰 [Development](openwiki/development.md)                           | The gate, the leak gate, the CI, the conventions                    |
 
 ## 📄 Licence

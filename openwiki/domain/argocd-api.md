@@ -115,15 +115,15 @@ Whether production behaves the same way is **unmeasured**. Only development was 
 
 Worth knowing, because two of these avoid a request entirely.
 
-| Source | Contains | Cost |
-|---|---|---|
-| `status.resources` on the application | Every managed object with sync status, health, `hook`, `requiresPruning`, `syncWave` | **Free**, it is inside the application |
-| `metadata.ownerReferences` | The parent ApplicationSet | **Free**, and 2034 of 2053 applications carry one |
-| `spec.syncPolicy` | `automated` with `prune`, `selfHeal`, `allowEmpty`, plus `syncOptions` | Free |
-| `status.history[]` | Past deployments with `revision`, `deployedAt`, `deployStartedAt`, `initiatedBy` | Free |
-| `revisions/{revision}/metadata` | `author`, `date`, `message` for a revision | One small request |
-| `managed-resources` | `targetState` and `normalizedLiveState` per resource | Heavy; narrow it with the resource parameters |
-| `POST /{name}/sync` | `revision`, `prune`, `dryRun`, `strategy`, `syncOptions`, `retryStrategy` | Mapped by [`sync.ts`](../../src/lib/argocd/sync.ts) |
+| Source                                | Contains                                                                             | Cost                                                |
+| ------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| `status.resources` on the application | Every managed object with sync status, health, `hook`, `requiresPruning`, `syncWave` | **Free**, it is inside the application              |
+| `metadata.ownerReferences`            | The parent ApplicationSet                                                            | **Free**, and 2034 of 2053 applications carry one   |
+| `spec.syncPolicy`                     | `automated` with `prune`, `selfHeal`, `allowEmpty`, plus `syncOptions`               | Free                                                |
+| `status.history[]`                    | Past deployments with `revision`, `deployedAt`, `deployStartedAt`, `initiatedBy`     | Free                                                |
+| `revisions/{revision}/metadata`       | `author`, `date`, `message` for a revision                                           | One small request                                   |
+| `managed-resources`                   | `targetState` and `normalizedLiveState` per resource                                 | Heavy; narrow it with the resource parameters       |
+| `POST /{name}/sync`                   | `revision`, `prune`, `dryRun`, `strategy`, `syncOptions`, `retryStrategy`            | Mapped by [`sync.ts`](../../src/lib/argocd/sync.ts) |
 
 Endpoints deliberately **not** used yet, all confirmed present in the swagger: `/events`,
 `/logs`, `/resource-tree`, `/syncwindows`, `/resource/actions`, `/rollback`,

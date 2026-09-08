@@ -13,7 +13,7 @@ export type Environment = "prod" | "preprod" | "dev";
 /**
  * `sso` runs the OIDC login from the extension and renews silently from the refresh token,
  * which is the only mode that never asks for anything again. `cli` reuses whatever session the
- * argocd binary holds. `token` reads a token from the keychain.
+ * argocd binary holds. `token` reads a token this extension stored.
  */
 export type AuthMode = "sso" | "cli" | "token";
 

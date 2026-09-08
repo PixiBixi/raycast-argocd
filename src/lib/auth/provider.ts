@@ -28,7 +28,7 @@ export class AuthError extends Error {
 
 export interface TokenProviderDeps {
   readCliToken: (host: string) => Promise<CliToken | undefined>;
-  readKeychainToken: (instanceId: string) => Promise<string | undefined>;
+  readStoredToken: (instanceId: string) => Promise<string | undefined>;
   /** Reads the stored SSO session, renewing it silently when it is close to lapsing. */
   readSsoToken?: (instance: ArgoInstance) => Promise<string>;
   now: () => Date;
@@ -52,7 +52,7 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
     }
 
     if (instance.authMode === "token") {
-      const token = await deps.readKeychainToken(instance.id);
+      const token = await deps.readStoredToken(instance.id);
       if (!token) {
         throw new AuthError(
           `No API token stored for ${instance.name}. Add one from Manage Instances.`,

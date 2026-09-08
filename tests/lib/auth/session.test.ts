@@ -8,7 +8,6 @@ import {
   needsRenewal,
   parseSession,
   serializeSession,
-  sessionAccount,
   sessionFromTokens,
   type SsoSession,
 } from "../../../src/lib/auth/session";
@@ -126,7 +125,7 @@ describe("serialization", () => {
     expect(parseSession(serializeSession(session()))).toEqual(session());
   });
 
-  it("never emits a line break, which the keychain write refuses", () => {
+  it("never emits a line break, which the secret write refuses", () => {
     expect(serializeSession(session())).not.toMatch(/[\r\n]/);
   });
 
@@ -145,8 +144,3 @@ describe("serialization", () => {
   });
 });
 
-describe("sessionAccount", () => {
-  it("sits next to the API token under its own account, so the two never collide", () => {
-    expect(sessionAccount("7c9e6679")).toBe("7c9e6679.sso");
-  });
-});
