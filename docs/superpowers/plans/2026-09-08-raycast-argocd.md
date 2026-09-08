@@ -1304,3 +1304,55 @@ This is the fourth instance of one pattern, and the reason it keeps recurring is
 each time, a step that could fail was written so that failing looked like succeeding. An
 optional chain that skips, an exit code that means nothing, a 404 that counts as reachable, a
 message that asserts a cause it never observed.
+
+### A8: the 100 MB command heap (correction to Task 8, 10 and 13)
+
+Found in use, once authentication finally worked and the read path ran for the first time
+against real instances: `Command Out of Memory. The command hit its JS heap limit (100 MB).`
+
+The numbers were in the plan already. A8 is what happens when a measurement is recorded and its
+consequence is not drawn: 30.2 MB of compact JSON was written down as an affordable transfer,
+which it is, without asking what holding it costs. `response.json()` keeps the body as a UTF-16
+string and as an object graph at the same time, which measures at **58 MB peak for one
+instance**. Two instances refreshing in parallel is 116 MB against a 100 MB cap.
+
+Measured after the fix, on the real 2053-application payload, with `--max-old-space-size=100`:
+
+| path                                        | peak heap |
+| ------------------------------------------- | --------- |
+| `response.json()`, one instance             | 58 MB     |
+| streamed and projected, one instance        | 35 MB     |
+| streamed, two instances in parallel         | 47 MB     |
+| streamed, two instances one after the other | 43 MB     |
+
+Changes applied:
+
+- **`src/lib/argocd/stream.ts`** (new): extracts the elements of one named top-level JSON array
+  from a chunked text stream. It does not parse JSON; it finds the array and then tracks brace
+  and bracket depth, string state and escapes to know where each element ends, handing that
+  slice to `JSON.parse`. Narrow enough to test exhaustively, which a general streaming parser
+  would not be. Also `decodeStream`, which decodes bytes with `TextDecoder({stream: true})` so a
+  multi-byte character split across chunks is not mangled, and accepts either an async iterable
+  or a web `ReadableStream`.
+- **`ArgoClient`**: `request()` split into `send()` (performs the request, maps failures, leaves
+  the body unread) and `request()` (reads JSON, still used for single-application reads, which
+  are tens of kilobytes). `listApplications` and `listApplicationSets` stream instead, and a
+  test asserts `response.json()` is never called on the list path so the regression cannot come
+  back quietly.
+- **`useApplications` and `useAppSets`**: probes stay concurrent, list requests are now
+  sequential. This matters more than the 43-vs-47 MB it saves today: sequential keeps the peak
+  flat as instances are added, concurrent grows it linearly.
+- **`ProjectionCache`**: `resourceVersion` removed from the entry and `CACHE_SCHEMA` bumped to
+  2, so existing caches are discarded and rebuilt. Streaming never sees the top-level metadata,
+  and nothing ever read that field: it was stored for a delta refresh that does not exist.
+- **`tests/lib/argocd/stream.test.ts`** (new, 30 cases): every chunk size from 1 byte up,
+  braces and brackets and commas inside strings, escaped quotes and backslashes, a key
+  straddling a chunk boundary, an escaped quote straddling one, deep nesting, a same-named array
+  nested inside an element, `"items": null`, an absent key, keys in either order, a similarly
+  named sibling key, an unparseable element, a truncated body, a 200 kB prelude before the
+  array, and multi-byte characters split byte by byte.
+
+The verification is worth naming, given the last four entries: the fix was checked by bundling
+the real modules with esbuild and running them against the real 30.2 MB payload under
+`node --max-old-space-size=100`, both before and after. Not by reasoning about which approach
+ought to use less memory.

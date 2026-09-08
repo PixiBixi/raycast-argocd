@@ -131,11 +131,20 @@ So the read path was measured instead, on a real instance holding 2053 applicati
 | peak heap while projecting                               | ~51 MB      |
 | the projection that gets cached                          | 289 kB      |
 
-That settles the design. One full list per refresh is affordable; holding it is not, and
-re-deriving it on every keystroke would be absurd. So:
+And the constraint that settles the shape of it: **a Raycast command gets a 100 MB JS heap.**
+Holding one list does not fit. `response.json()` peaks at 58 MB for a single instance, because
+the body exists as a UTF-16 string and as an object graph simultaneously, so two instances in
+parallel exceed the limit and the command is killed. This was found in use, not in review.
 
-- the response is projected to the row model as soon as it is parsed, and the raw body is
-  dropped (`lib/argocd/project.ts`);
+One full list per refresh is affordable; holding it is not, and re-deriving it on every
+keystroke would be absurd. So:
+
+- the response body is consumed as a stream and each element of `items` is parsed, projected
+  and dropped on its own (`lib/argocd/stream.ts`, `lib/argocd/project.ts`); the body is never
+  materialised, which takes the peak from 58 MB to 35 MB;
+- instances are refreshed one at a time rather than concurrently, so the peak stays flat as
+  instances are added instead of growing with them. The reachability probes stay concurrent,
+  being small;
 - the projection, two orders of magnitude smaller, is what gets cached to disk;
 - `Accept-Encoding` is deliberately **not** set by hand: Node's `fetch` negotiates gzip itself
   and decompresses the body, and setting the header manually is how a caller ends up holding a
@@ -158,9 +167,11 @@ Refreshes across instances run concurrently, each with its own `AbortController`
 (`requestTimeoutSeconds`, default 15). One unreachable instance degrades to "showing cached
 data from N minutes ago" for that instance only; the others still refresh.
 
-`resourceVersion` is persisted for a future delta refresh via `/api/v1/stream/applications`.
-v1 does a full projected refresh: at ~700 kB and sub-second it is not worth the complexity of
-maintaining a watch inside a short-lived Raycast command.
+`resourceVersion` is deliberately **not** captured. Streaming reads only the `items` array, so
+the top-level metadata is never seen, and nothing consumed that field: it was stored for a delta
+refresh that does not exist. Reintroducing it would mean either a second request or teaching the
+scanner about sibling keys, and a delta refresh inside a short-lived Raycast command is not worth
+either.
 
 ### 4.4 Search and rendering
 
@@ -395,10 +406,11 @@ No fixture is derived from a real cluster.
 
 ## 6. Risks
 
-- **List size growth**: the read path is sized on 2.97 MB gzipped for 2053 applications. It
-  scales linearly, so an instance an order of magnitude larger would need the `projects`
-  filter and per-project caching. The cache is already keyed per instance, so that change is
-  local to `useApplications`.
+- **List size growth against the 100 MB heap**: streaming makes the peak proportional to the
+  projection rather than the body, so it now grows with the number of applications retained,
+  not with the response. At 35 MB for 2053 applications there is room for a few times that. An
+  instance an order of magnitude larger would need the `projects` filter and per-project
+  caching, which stays local to `useApplications` since the cache is already keyed per instance.
 - **The CLI loopback redirect may not be registered.** Verified against the real identity
   provider: `argocd login <host> --sso` serves its callback on
   `http://localhost:8085/auth/callback`, and the OIDC client ArgoCD is configured with does not
