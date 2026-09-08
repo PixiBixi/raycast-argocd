@@ -1237,3 +1237,35 @@ So the command now merges two sources:
 **Also fixed:** `tests/lib/real-instance.test.ts` read its fixture at collection time, and
 `describe.runIf` still evaluates the suite body, so the file threw whenever `REAL_APPS_JSON` was
 unset. The read is now lazy, inside each test.
+
+### A6: the keychain write stored nothing and reported success (correction to Task 5)
+
+Found in use, and the worst of the three bugs so far because it announced the opposite of what
+happened.
+
+`security add-generic-password -w`, with `-w` given no value, prompts **twice**: "password data
+for new item" then "retype password for new item". Task 5 fed the token to stdin once, so
+`security` printed "passwords don't match", stored an **empty** password, and exited **0**. The
+form's success toast fired on the exit code, so the operator was told the token was stored while
+the keychain held an empty string, and every later request failed with "no API token stored".
+
+Verified against the real binary before and after: feeding the value once stores `""`, feeding
+it twice stores the value, and both exit 0.
+
+Changes applied:
+
+- `writeTokenInput(token)` returns `token\ntoken\n`, and the token still never touches argv.
+- `writeKeychainToken` refuses a token containing a line break (it would end a prompt early) or
+  an empty one, and then **reads the value back and throws if it differs**. An exit code of 0
+  from `security` is not evidence that anything was stored, so it is no longer treated as such.
+- the token form catches the failure and shows it, instead of letting a rejection surface as a
+  generic Raycast error.
+- `tests/lib/auth/keychain.test.ts` gains a fake `security` that reproduces the double prompt,
+  including the store-nothing-and-exit-0 behaviour. The previous test asserted only that the
+  token was absent from argv, which is why it could not catch this: it never checked that the
+  value arrived.
+
+The lesson generalises to the two bugs before it, and is now the reason all three are written
+up together: a success path that is not verified against the thing it claims to have done will
+eventually claim something false. The probe claimed reachable on a 404, the empty state claimed
+an expiry it had not observed, and this claimed a stored token it had not read back.

@@ -255,9 +255,16 @@ confirmation naming the application, the instance and its environment.
 shape when the CLI has only ever been used in core mode. Being logged in to `gcloud` or having a
 working `kubectl` is unrelated: those authenticate to the cluster, not to ArgoCD.
 
-**"No API token stored for <instance>"** - the instance is in keychain mode and the keychain has
-nothing for it. Use **Set API token** in Manage Instances. Check what is stored with
-`security find-generic-password -s raycast-argocd -a <instance-id> -w`.
+**"No API token stored for <instance>"** - the instance is in keychain mode and the keychain
+has nothing usable for it. Use **Set API token** in Manage Instances. Check what is stored with:
+
+```sh
+security find-generic-password -s raycast-argocd -a <instance-id> -w
+```
+
+An empty answer means the item exists with an empty password, which counts as no token. Store it
+again; the extension reads the value back before reporting success, so a write that did not land
+now fails loudly instead of showing a success toast.
 
 **Everything worked and now returns 401** - the OIDC token has a limited lifetime, typically one
 hour. Use **Log in with SSO** from the empty state or from Manage Instances.
