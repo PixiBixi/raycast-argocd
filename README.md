@@ -17,6 +17,11 @@ the usage reference.
 
 ## 🚀 Install
 
+Not published yet. Until it is, the only way to run it is the development install below, which
+leaves the extension registered in Raycast for as long as you keep it.
+
+## 🛠️ Run it locally
+
 Raycast on macOS, Node 22.22.2 or later. The `argocd` CLI only for the CLI session mode.
 
 ```sh
@@ -25,7 +30,8 @@ npm run dev
 ```
 
 The four commands appear at the top of Raycast's root search. `Ctrl-C` stops the dev server and
-leaves the extension installed.
+leaves the extension installed, so you can use it without keeping the terminal open. Reopen a
+command to pick up a code change.
 
 ## ⚙️ Adding an instance
 

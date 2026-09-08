@@ -7,23 +7,24 @@ Everything unusual about this codebase comes from four constraints, all of them 
 than assumed. Read them before reading any code, because most design decisions here are a
 direct answer to one of them.
 
-| Constraint | Consequence |
-|---|---|
-| The target instances hold **2053 and 2220 applications** | The applications list is 30.2 MB of compact JSON. It is streamed, never held. |
-| A Raycast command gets a **100 MB JS heap** | `response.json()` on that list peaks at 58 MB, so two instances in parallel killed the command. See [read path](architecture/read-path.md). |
-| The instances sit **behind a VPN** | Every instance is probed before it is queried, so a disconnected laptop is reported in under a second instead of after every request times out. |
-| One instance is **production, read-only** | Write operations are refused twice over, by the UI and independently by the client. See [commands](architecture/commands.md). |
+| Constraint                                               | Consequence                                                                                                                                     |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| The target instances hold **2053 and 2220 applications** | The applications list is 30.2 MB of compact JSON. It is streamed, never held.                                                                   |
+| A Raycast command gets a **100 MB JS heap**              | `response.json()` on that list peaks at 58 MB, so two instances in parallel killed the command. See [read path](architecture/read-path.md).     |
+| The instances sit **behind a VPN**                       | Every instance is probed before it is queried, so a disconnected laptop is reported in under a second instead of after every request times out. |
+| One instance is **production, read-only**                | Write operations are refused twice over, by the UI and independently by the client. See [commands](architecture/commands.md).                   |
 
 ## Where to start
 
-| If you want to | Read |
-|---|---|
-| Understand how code is organised and why it is testable | [Layering](architecture/layering.md) |
-| Change anything that reads from ArgoCD | [Read path](architecture/read-path.md) |
-| Add a command, a view or an action | [Commands](architecture/commands.md) |
-| Touch the ArgoCD API | [What the ArgoCD API does not do](domain/argocd-api.md) |
-| Touch anything about tokens or logins | [Authentication](domain/authentication.md) |
-| Run the tests, the linter, or the CI | [Development](development.md) |
+| If you want to                                          | Read                                                                                       |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Understand how code is organised and why it is testable | [Layering](architecture/layering.md)                                                       |
+| Change anything that reads from ArgoCD                  | [Read path](architecture/read-path.md)                                                     |
+| Add a command, a view or an action                      | [Commands](architecture/commands.md)                                                       |
+| Touch the ArgoCD API                                    | [What the ArgoCD API does not do](domain/argocd-api.md)                                    |
+| Touch anything about tokens or logins                   | [Authentication](domain/authentication.md)                                                 |
+| Run the tests, the linter, or the CI                    | [Development](development.md)                                                              |
+| Publish this to the Raycast Store                       | [Development](development.md#publishing-to-the-raycast-store), which starts with a blocker |
 
 ## Running it
 
@@ -43,12 +44,12 @@ second reason is enforced, not merely intended, by
 
 ## The commands
 
-| Command | Mode | What it does |
-|---|---|---|
-| Search Applications | view | Searches every configured instance at once, or one of them. |
-| Search ApplicationSets | view | Lists ApplicationSets with a rollup of the applications each generated. |
-| Manage Instances | view | Adds and edits instances, shows reachability, handles logins and tokens. |
-| ArgoCD Monitor | menu-bar, 10m | Counts what is degraded or out of sync, and keeps the cache warm. |
+| Command                | Mode          | What it does                                                             |
+| ---------------------- | ------------- | ------------------------------------------------------------------------ |
+| Search Applications    | view          | Searches every configured instance at once, or one of them.              |
+| Search ApplicationSets | view          | Lists ApplicationSets with a rollup of the applications each generated.  |
+| Manage Instances       | view          | Adds and edits instances, shows reachability, handles logins and tokens. |
+| ArgoCD Monitor         | menu-bar, 10m | Counts what is degraded or out of sync, and keeps the cache warm.        |
 
 Declared in [`package.json`](../package.json); each `name` maps to `src/<name>.tsx`.
 

@@ -44,7 +44,7 @@ It asserts that nothing is dropped, that every row is searchable, that the Appli
 reconstruction produces something, and that ranking the whole corpus stays under 60 ms. **Never
 commit that dump**: it carries cluster, project and repository names.
 
-Note what it does *not* cover: the 100 MB heap limit. A change to the streaming read path is
+Note what it does _not_ cover: the 100 MB heap limit. A change to the streaming read path is
 worth re-measuring the way A8 in the
 [implementation plan](../docs/superpowers/plans/2026-09-08-raycast-argocd.md) describes, by
 bundling the real modules with esbuild and running them under `--max-old-space-size=100`.
@@ -124,7 +124,7 @@ Taken from the repository's own history, which is consistent about all of it.
 - **Every commit is signed.** `git log --format="%h %G? %s"` should be `G` throughout.
 - **The commit body carries the why, and especially the evidence.** The useful commits in this
   history say what was measured and what it disproved. `perf(argocd): stream list responses
-  instead of holding them` is the model to imitate.
+instead of holding them` is the model to imitate.
 - **Comments state the decision and why it must not be undone**, in one to three lines. The
   investigation goes in the commit body or in the plan amendment, not inline.
 - **No em dash, en dash, or bullet character** in anything written here, including code
@@ -139,3 +139,55 @@ There are eleven, and they are the most useful history in the repository: each s
 believed, what was measured, and what changed as a result. Then update the wiki page that
 carries the claim, which for anything about the ArgoCD API is
 [domain/argocd-api.md](domain/argocd-api.md).
+
+## Publishing to the Raycast Store
+
+Not done, and not a formality. Read the
+[store checklist](https://developers.raycast.com/basics/prepare-an-extension-for-store) before
+starting, because one of its rules cuts across the whole design.
+
+### The keychain is a rejection
+
+> Extensions requesting Keychain Access will be rejected due to security concerns.
+
+That is every credential this extension stores: the API token and the single sign-on session
+both live in the keychain, reached through `/usr/bin/security`. The same page names the
+sanctioned alternative, "use preferences API for configuration and credentials", which does not
+model a variable number of instances and is exactly why the keychain was chosen. See
+[authentication](domain/authentication.md).
+
+There is one interpretive doubt worth recording: the rule may target the macOS Keychain Access
+entitlement rather than a shell-out to `security`. Shelling out to `security` is how a process
+reaches the keychain without that entitlement, so treat it as a blocker until a reviewer says
+otherwise.
+
+The way out is `OAuth.PKCEClient`, Raycast's own encrypted token store, which is designed for
+this. It would replace the keychain for the session, at the cost of Raycast's redirect
+(`https://raycast.com/redirect`) instead of the loopback `http://localhost:8085/auth/callback`,
+so that is the URI the identity provider would have to register. For a public extension that is
+the right trade anyway.
+
+### The rest of the checklist
+
+| Requirement                                       | State                                                          |
+| ------------------------------------------------- | -------------------------------------------------------------- |
+| Three to six screenshots, 2000x1250 PNG           | Absent                                                         |
+| `author` set to the Raycast account username      | Set to `pixibixi`, unconfirmed                                 |
+| Icon legible on light and dark backgrounds        | Never checked on light                                         |
+| Media in a top-level `media/` folder              | The icon is in `assets/`                                       |
+| `CHANGELOG.md` as `## [Title] - {PR_MERGE_DATE}`  | Uses Keep a Changelog instead                                  |
+| `license: MIT`, one category, `package-lock.json` | Done                                                           |
+| Command titles as `<verb> <noun>` or `<noun>`     | `ArgoCD Monitor` is redundant inside an extension named ArgoCD |
+| Latest `@raycast/api`, `npm run build` clean      | Done                                                           |
+
+### What publishing actually is
+
+`npm run publish` on a public extension opens a **pull request against the
+`raycast/extensions` monorepo**. It publishes the extension directory, not this repository, so
+the git history, the CI, `docs/superpowers/` and `openwiki/` are not part of it. Decide
+deliberately whether any of that should travel: these notes name internal hosts nowhere, but
+they do describe internal topology.
+
+An extension is **not versioned**. There is no `version` field in `package.json`; Raycast reads
+`CHANGELOG.md`, where `{PR_MERGE_DATE}` is replaced when the pull request merges. Any git tag in
+this repository is for local bookkeeping only and means nothing to Raycast.
