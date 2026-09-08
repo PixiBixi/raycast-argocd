@@ -25,10 +25,18 @@
  *   - ranking the whole corpus, worst case   7.4 ms   (a single-letter query, so every row
  *                                                      matches; a keystroke has ~16 ms)
  *
- * That is why the read path is what it is: one full list per refresh is affordable, holding it
- * is not, and re-fetching it on every keystroke would be absurd. So the response is projected
- * to the row model immediately (project.ts), the projection is what gets cached to disk
- * (cache/store.ts), and the raw response is never retained.
+ * And the constraint that decides the shape of the read path: a Raycast command gets a
+ * **100 MB JS heap**. Holding that list is not an option. `response.json()` on it peaks at
+ * 58 MB for one instance, because the body exists as a UTF-16 string and as an object graph at
+ * the same time; two instances in parallel exceed the limit and kill the command. Streaming the
+ * same list and projecting element by element peaks at 35 MB, and 43 MB for two instances read
+ * one after the other.
+ *
+ * So: one full list per refresh is affordable, holding it is not, and re-fetching it on every
+ * keystroke would be absurd. The response is streamed and projected element by element
+ * (stream.ts, project.ts), the projection is what gets cached to disk (cache/store.ts), the raw
+ * response is never retained, and instances are refreshed one at a time so the peak stays flat
+ * as instances are added.
  */
 
 /** Query parameters the applications list actually honours. */

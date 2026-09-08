@@ -2,11 +2,18 @@
  * The ArgoCD REST client.
  *
  * The API offers no field projection, so a list response is projected to the row model here and
- * the raw body is dropped immediately (see fields.ts for the measurements behind that). Every
- * request carries its own timeout, and every write is refused unless the instance is explicitly
- * marked writable. That last check duplicates what the UI already does by hiding the action:
- * the duplication is the point, because a UI regression must not be able to produce a write
- * against production.
+ * the raw body is dropped immediately (see fields.ts for the measurements behind that).
+ *
+ * A Raycast command gets a 100 MB JS heap, and one applications list does not fit: 30.2 MB of
+ * compact JSON becomes roughly 60 MB as a UTF-16 string plus another 50 MB of object graph, and
+ * `response.json()` holds both at once. So list responses are streamed and projected element by
+ * element (stream.ts), never materialised. Single-application reads use `response.json()`,
+ * being a few tens of kilobytes each.
+ *
+ * Every request carries its own timeout, and every write is refused unless the instance is
+ * explicitly marked writable. That last check duplicates what the UI already does by hiding the
+ * action: the duplication is the point, because a UI regression must not be able to produce a
+ * write against production.
  */
 
 import type { ArgoInstance } from "../config/instances";
@@ -21,6 +28,7 @@ import {
 } from "./errors";
 import { projectAppSet, type AppSetSummary } from "./appset";
 import { projectDetail, projectSummary } from "./project";
+import { decodeStream, streamArrayItems } from "./stream";
 import type { SyncRequest } from "./sync";
 import type { AppDetail, AppSummary } from "./types";
 
@@ -32,12 +40,10 @@ export interface ClientDeps {
 
 export interface ListResult {
   apps: AppSummary[];
-  resourceVersion: string | undefined;
 }
 
 export interface AppSetListResult {
   appSets: AppSetSummary[];
-  resourceVersion: string | undefined;
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -57,19 +63,55 @@ export class ArgoClient {
   }
 
   async listApplications(signal?: AbortSignal): Promise<ListResult> {
-    const body = await this.get("/api/v1/applications", {}, signal);
-    return {
-      apps: this.projectItems(body, (item) => projectSummary(item, this.instance.id)),
-      resourceVersion: readResourceVersion(body),
-    };
+    const apps = await this.streamList(
+      "/api/v1/applications",
+      (item) => projectSummary(item, this.instance.id),
+      signal,
+    );
+    return { apps };
   }
 
   async listApplicationSets(signal?: AbortSignal): Promise<AppSetListResult> {
-    const body = await this.get("/api/v1/applicationsets", {}, signal);
-    return {
-      appSets: this.projectItems(body, (item) => projectAppSet(item, this.instance.id)),
-      resourceVersion: readResourceVersion(body),
-    };
+    const appSets = await this.streamList(
+      "/api/v1/applicationsets",
+      (item) => projectAppSet(item, this.instance.id),
+      signal,
+    );
+    return { appSets };
+  }
+
+  /**
+   * Streams a list endpoint, projecting each element as it arrives so the response is never
+   * held whole. A single malformed element is dropped rather than taking the list down.
+   */
+  private async streamList<T>(
+    path: string,
+    project: (item: unknown) => T | undefined,
+    signal?: AbortSignal,
+  ): Promise<T[]> {
+    const response = await this.send("GET", path, {}, undefined, signal);
+    if (!response.body) {
+      throw new ApiError(`${this.instance.name} returned an empty response.`, response.status);
+    }
+
+    const projected: T[] = [];
+    try {
+      await streamArrayItems(decodeStream(response.body), {
+        key: "items",
+        onItem: (item) => {
+          const value = project(item);
+          if (value !== undefined) {
+            projected.push(value);
+          }
+        },
+      });
+    } catch (error) {
+      if (isAbort(error)) {
+        throw new TimeoutError(`${this.instance.name} did not answer in time.`);
+      }
+      throw new NetworkError(`The connection to ${this.instance.name} was interrupted.`);
+    }
+    return projected;
   }
 
   async getApplication(
@@ -115,15 +157,6 @@ export class ArgoClient {
     return detail;
   }
 
-  private projectItems<T>(body: unknown, project: (item: unknown) => T | undefined): T[] {
-    const items = (body as { items?: unknown })?.items;
-    if (!Array.isArray(items)) {
-      return [];
-    }
-    // A single malformed item must not take the whole list down: it is dropped, not repaired.
-    return items.map(project).filter((item): item is T => item !== undefined);
-  }
-
   private get(path: string, query: Record<string, string>, signal?: AbortSignal): Promise<unknown> {
     return this.request("GET", path, query, undefined, signal);
   }
@@ -135,6 +168,25 @@ export class ArgoClient {
     body: unknown,
     signal?: AbortSignal,
   ): Promise<unknown> {
+    const response = await this.send(method, path, query, body, signal);
+    if (response.status === 204) {
+      return undefined;
+    }
+    try {
+      return await response.json();
+    } catch {
+      throw new ApiError(`${this.instance.name} returned a response that is not JSON.`, response.status);
+    }
+  }
+
+  /** Performs the request and maps a failure to a typed error, leaving the body unread. */
+  private async send(
+    method: "GET" | "POST",
+    path: string,
+    query: Record<string, string>,
+    body: unknown,
+    signal?: AbortSignal,
+  ): Promise<Response> {
     const token = await this.deps.getToken(this.instance);
     const url = new URL(`${this.instance.baseUrl}${path}`);
     for (const [key, value] of Object.entries(query)) {
@@ -174,15 +226,7 @@ export class ArgoClient {
     if (!response.ok) {
       throw await this.toError(response);
     }
-
-    if (response.status === 204) {
-      return undefined;
-    }
-    try {
-      return await response.json();
-    } catch {
-      throw new ApiError(`${this.instance.name} returned a response that is not JSON.`, response.status);
-    }
+    return response;
   }
 
   private async toError(response: Response): Promise<Error> {
@@ -221,11 +265,6 @@ function hostOf(baseUrl: string): string {
 
 function isAbort(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
-}
-
-function readResourceVersion(body: unknown): string | undefined {
-  const version = (body as { metadata?: { resourceVersion?: unknown } })?.metadata?.resourceVersion;
-  return typeof version === "string" ? version : undefined;
 }
 
 /**

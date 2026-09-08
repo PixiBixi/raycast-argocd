@@ -80,18 +80,27 @@ describe("listApplications", () => {
     expect(Object.keys(headers).map((key) => key.toLowerCase())).not.toContain("accept-encoding");
   });
 
-  it("returns the projected applications and the list resourceVersion", async () => {
+  it("returns the projected applications, dropping what it cannot identify", async () => {
     const { fetchStub } = recorder(() => json(APP_LIST));
     const result = await new ArgoClient(instance(), deps(fetchStub)).listApplications();
-
-    expect(result.resourceVersion).toBe("9001");
     expect(result.apps.map((app) => app.name)).toEqual(["app-one", "app-two"]);
   });
 
   it("survives a response with no items", async () => {
     const { fetchStub } = recorder(() => json({}));
-    const result = await new ArgoClient(instance(), deps(fetchStub)).listApplications();
-    expect(result).toEqual({ apps: [], resourceVersion: undefined });
+    await expect(new ArgoClient(instance(), deps(fetchStub)).listApplications()).resolves.toEqual({
+      apps: [],
+    });
+  });
+
+  it("never materialises the list: the body is read as a stream, not with json()", async () => {
+    const body = JSON.stringify(APP_LIST);
+    const response = new Response(body, { status: 200, headers: { "Content-Type": "application/json" } });
+    const jsonSpy = vi.spyOn(response, "json");
+    const fetchStub = vi.fn(async () => response) as unknown as typeof fetch;
+
+    await new ArgoClient(instance(), deps(fetchStub)).listApplications();
+    expect(jsonSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -107,7 +116,6 @@ describe("listApplicationSets", () => {
 
     expect(calls[0]?.url.pathname).toBe("/api/v1/applicationsets");
     expect(result.appSets.map((set) => set.name)).toEqual(["team-a-set"]);
-    expect(result.resourceVersion).toBe("7");
   });
 });
 
