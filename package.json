@@ -135,7 +135,8 @@
     "format": "prettier --write .",
     "test:coverage": "vitest run --coverage",
     "check:secrets": "./scripts/check-no-secrets.sh",
-    "store:payload": "./scripts/store-payload.sh"
+    "store:payload": "./scripts/store-payload.sh",
+    "demo": "node scripts/demo-argocd.mjs"
   },
   "devDependencies": {
     "@raycast/eslint-config": "^2.2.0",
