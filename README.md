@@ -32,6 +32,13 @@ on-disk cache, which is what keeps `Search Applications` painting instantly the 
 time. That is only affordable because the read path streams: around 3 MB gzipped per instance,
 projected element by element.
 
+A menu bar command appears only after it has been run once: open Raycast, run **ArgoCD
+Monitor**, and the icon installs itself next to the clock. Nothing happens inside Raycast, which
+is expected.
+
+If the icon does not appear, the usual reason is macOS rather than the extension: a full menu
+bar silently drops the items that do not fit, which a notched MacBook makes worse.
+
 The title is quiet by default:
 
 | Title                    | Meaning                                                      |

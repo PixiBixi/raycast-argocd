@@ -11,12 +11,21 @@
  * keeps showing the last numbers it had rather than emptying.
  */
 
-import { Color, Icon, MenuBarExtra, getPreferenceValues, open, openCommandPreferences } from "@raycast/api";
+import {
+  Color,
+  Icon,
+  MenuBarExtra,
+  getPreferenceValues,
+  open,
+  openCommandPreferences,
+  type Image,
+} from "@raycast/api";
 import { useEffect, useState } from "react";
 import type { AppSummary } from "./lib/argocd/types";
 import type { ArgoInstance } from "./lib/config/instances";
 import {
   monitorState,
+  type MonitorState,
   monitorTitle,
   monitorTooltip,
   summarize,
@@ -35,12 +44,20 @@ interface MonitorPreferences {
   showWhenHealthy?: boolean;
 }
 
-const STATE_ICON: Record<string, { source: Icon; tintColor: Color }> = {
+/**
+ * A problem state gets a semantic icon; everything else gets the extension's own mark.
+ *
+ * The first version used a faint grey circle when healthy and while loading, with no title. In
+ * a menu bar holding a dozen items that is indistinguishable from nothing, and the honest
+ * report was "I cannot see it". An item that cannot be found is not a quieter report, it is an
+ * absent one.
+ */
+const STATE_ICON: Record<MonitorState, Image.ImageLike> = {
   degraded: { source: Icon.HeartDisabled, tintColor: Color.Red },
   drifting: { source: Icon.ArrowClockwise, tintColor: Color.Yellow },
-  stale: { source: Icon.WifiDisabled, tintColor: Color.SecondaryText },
-  healthy: { source: Icon.Heart, tintColor: Color.Green },
-  empty: { source: Icon.Circle, tintColor: Color.SecondaryText },
+  stale: { source: Icon.WifiDisabled, tintColor: Color.Orange },
+  healthy: "argocd.png",
+  empty: "argocd.png",
 };
 
 export default function Monitor() {
@@ -81,14 +98,16 @@ export default function Monitor() {
     };
   }, []);
 
-  const state = summary ? monitorState(summary) : "empty";
+  const state: MonitorState = summary ? monitorState(summary) : "empty";
+  // A title while loading is what makes the item findable on the very first run, which is
+  // exactly when someone is looking for it.
   const title = summary
     ? monitorTitle(summary, { showWhenHealthy: preferences().showWhenHealthy })
-    : undefined;
+    : "ArgoCD";
 
   return (
     <MenuBarExtra
-      icon={STATE_ICON[state] ?? STATE_ICON.empty}
+      icon={STATE_ICON[state]}
       title={title}
       tooltip={summary ? monitorTooltip(summary) : "Loading ArgoCD applications"}
       isLoading={loading}
