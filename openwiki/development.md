@@ -6,12 +6,13 @@ Everything below has to pass before a commit. Nothing here is optional, and each
 catches something the other four do not.
 
 ```sh
-npm test                      # vitest over src/lib, 485 tests
-npm run typecheck             # tsc --noEmit
-npm run lint                  # ray lint: manifest, icons, eslint, prettier over src/
-npm run format:check          # prettier over everything else, tests and docs included
-npm run build                 # ray build: bundles every command with esbuild
-./scripts/check-no-secrets.sh # the leak gate
+npm test              # vitest over src/lib, 485 tests
+npm run typecheck     # tsc --noEmit
+npm run lint          # ray lint: manifest, icons, eslint, prettier over src/
+npm run format:check  # prettier over everything else, tests and docs included
+npm run build         # ray build: bundles every command with esbuild
+npm run check:secrets # the leak gate, over every tracked file
+npm run store:payload # store readiness; assembles the monorepo payload
 ```
 
 `npm run build` earns its place: it is the only thing that catches a command declared in
@@ -85,10 +86,21 @@ exists to protect. So it matches on shape:
 - URLs pointing at any host outside a short allowlist of example and public hosts
 - `*.internal.*` and `*.local.*` hostnames
 - Email addresses that are not a noreply or example address
+- Real names, since the extension publishes under a Raycast account username
 
 Fixtures use `https://argocd.example.com`, application names like `app-one`, project `team-a`.
 When you add a fixture with a new legitimate host, add it to `allowed_host` in the script rather
 than working around the check.
+
+It scans **every tracked file**, with two exclusions that carry their reason in the script:
+`package-lock.json`, whose registry URLs are all resolved by npm, and the script itself, which
+necessarily contains every pattern it searches for.
+
+That default is recent and it mattered. The gate used to scan an allowlist of seven paths, so
+it printed "No cluster identity or credential found in the tracked tree" having never opened
+`openwiki/`, `docs/`, `LICENSE` or `AGENTS.md`. Widening it found two things the same day: a
+host missing from the allowlist, and a real name in the `LICENSE` copyright line. Neither was
+serious; both were invisible to a check whose own success message claimed the whole tree.
 
 ### The local deny-list
 
@@ -186,9 +198,13 @@ before it was removed.
 | `author` set to the Raycast account username       | Set to `pixibixi`, unconfirmed         |
 | Icon legible on light and dark backgrounds         | Never checked on light                 |
 | Command titles as `<verb> <noun>` or `<noun>`      | Done                                   |
-| `CHANGELOG.md` as `## [Title] - {PR_MERGE_DATE}`   | Done                                   |
-| `license: MIT`, one category, `package-lock.json`  | Done                                   |
-| Latest `@raycast/api`, `npm run build` clean       | Done                                   |
+| `CHANGELOG.md` as `## [Title] - {PR_MERGE_DATE}`   | Done, enforced by the payload          |
+| `license: MIT`, one category, `package-lock.json`  | Done, enforced by the payload          |
+| Latest `@raycast/api`, `npm run build` clean       | Done, enforced by the payload          |
+| No personal data in what ships                     | Done, enforced by the leak gate        |
+
+Everything marked enforced is checked by `npm run store:payload`, which refuses to write a
+payload rather than reporting a problem and continuing.
 
 Two of those need a person at a keyboard, so they are the real remainder.
 
@@ -197,7 +213,7 @@ folder, taken on a retina screen, and it says so in those words. It also **skips
 entirely when the folder does not exist**, which is why `npm run lint` passes today and says
 nothing about them. That is the same shape as every other bug in this repository's history: a
 check that is named more broadly than what it verifies. Do not read a green `ray lint` as
-evidence that the metadata is in order.
+evidence that the metadata is in order; `npm run store:payload` is what refuses.
 
 Screenshots also cannot be produced from a terminal. They need the extension open in Raycast
 against a real instance, which means whoever takes them decides what appears in them: an
@@ -209,11 +225,43 @@ assuming.
 
 ### What publishing actually is
 
-`npm run publish` on a public extension opens a **pull request against the
-`raycast/extensions` monorepo**. It publishes the extension directory, not this repository, so
-the git history, the CI, `docs/superpowers/` and `openwiki/` are not part of it. Decide
-deliberately whether any of that should travel: these notes name internal hosts nowhere, but
-they do describe internal topology.
+Publishing opens a **pull request against the `raycast/extensions` monorepo**, which adds the
+extension as `extensions/argocd/`. Raycast owns that repository, so whatever lands there is
+public and permanent regardless of what this repository later becomes.
+
+An earlier version of this page claimed `npm run publish` sends the extension directory and
+that `docs/superpowers/` and `openwiki/` are "not part of it". That was an assumption, and it
+is false. `ray publish` copies the directory minus one hardcoded list, and nothing else:
+
+```
+.git  .github  node_modules  raycast-env.d.ts  .direnv
+.raycast-swift-build  .swiftpm  compiled_raycast_swift  compiled_raycast_rust
+```
+
+`openwiki/` and `docs/` are not on it and the list cannot be extended, so both would travel,
+carrying the instance topology and the measured figures with them. That is why the
+`publish` script is gone from `package.json` and `npm run store:payload` replaces it.
+
+### The payload
+
+`npm run store:payload` assembles into `dist/store-payload/` exactly what belongs in the pull
+request, and **writes nothing at all** when a store requirement is unmet: no screenshots, wrong
+screenshot size, a manifest field missing, a `version` field present, a changelog heading
+without `{PR_MERGE_DATE}`, a leak-gate failure, or a build failure.
+
+What it keeps is not invented. It is what published extensions actually carry: `jira` and
+`brew` both ship `metadata/` and a test directory, `brew` ships a `vitest.config`, `gitlab`
+ships `scripts/` and an `AGENTS.md`. So tests travel; the wiki does not, because no published
+extension has one and it is not extension content.
+
+Left out deliberately, each for a reason rather than an oversight: `openwiki/` and `docs/`
+(repository-side, and they describe internal topology), `.github/` and `scripts/` (this
+repository's CI, meaningless in the monorepo), `AGENTS.md` (it links into `openwiki/`, which
+does not travel) and `.nvmrc` (the monorepo pins its own toolchain).
+
+Then open the pull request by hand against a fork of `raycast/extensions`, copying
+`dist/store-payload/` to `extensions/argocd/`. Doing it by hand is the point: the payload is
+reviewable before it leaves.
 
 An extension is **not versioned**. There is no `version` field in `package.json`; Raycast reads
 `CHANGELOG.md`, where `{PR_MERGE_DATE}` is replaced when the pull request merges. Any git tag in
