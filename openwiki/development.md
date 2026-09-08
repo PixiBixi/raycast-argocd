@@ -215,9 +215,35 @@ nothing about them. That is the same shape as every other bug in this repository
 check that is named more broadly than what it verifies. Do not read a green `ray lint` as
 evidence that the metadata is in order; `npm run store:payload` is what refuses.
 
-Screenshots also cannot be produced from a terminal. They need the extension open in Raycast
-against a real instance, which means whoever takes them decides what appears in them: an
-application list is a list of internal service names.
+Screenshots also cannot be produced from a terminal, and they must not come from a real
+instance: an application list is a list of internal service names, and the listing page is
+public. Raycast's own checklist says to avoid sensitive data for exactly this reason.
+
+So there is a fake instance instead. `npm run demo` serves an invented corpus on loopback,
+150 applications across 5 fictional projects with a realistic spread of health and sync
+states, answering every endpoint the extension calls:
+
+```sh
+npm run demo   # http://127.0.0.1:8080
+npm run dev    # then Manage Instances -> add http://127.0.0.1:8080, auth mode "token", any value
+```
+
+Then capture. Raycast has a built-in **Window Capture**, bound in Advanced Preferences, which
+writes a correctly sized PNG straight into `metadata/` when "Save to Metadata" is ticked, and
+strips the development UI. That is the only way to get 2000x1250 reliably; a manual screenshot
+will not match.
+
+Cleartext on loopback is what makes this work, and `normalizeBaseUrl` exempts exactly
+`localhost`, `127.0.0.1` and `::1`. Not a substring match: `localhost.example.com` and
+`notlocalhost` are both still refused, with tests for each. The exemption is not only for
+screenshots, it is also how a port-forwarded ArgoCD is reached.
+
+`tests/lib/demoCorpus.test.ts` keeps the corpus honest. It projects the served data through
+the real `projectSummary`, `projectDetail` and `projectResourceDiff` and asserts that nothing
+is dropped, that no summary field is empty, that every ApplicationSet is recovered from
+`ownerReferences`, and that the diff is non-trivial. Without it a corpus could quietly stop
+projecting and put "unknown" in a published screenshot. It is skipped unless `DEMO_ARGOCD`
+points at a running server, the same pattern as `real-instance.test.ts`.
 
 **`author`.** It must equal the Raycast account username, not the GitHub one. They happen to be
 spelled the same here, which is exactly the sort of coincidence worth confirming rather than
