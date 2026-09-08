@@ -5,8 +5,13 @@
  *   1. every instance's cache is read from disk and rendered, so the first paint costs nothing;
  *   2. every instance is probed concurrently with a short timeout, so a VPN that is down is
  *      known in well under a second;
- *   3. only the reachable instances whose cache is stale are queried, concurrently, each with
- *      its own abort controller.
+ *   3. the reachable instances whose cache is stale are queried **one at a time**.
+ *
+ * That last step is sequential on purpose. A Raycast command gets a 100 MB JS heap, and
+ * streaming one applications list of 2053 applications still peaks around 35 MB; two of those
+ * at once, plus the rendered list, is how the command was getting killed. Refreshing in
+ * sequence keeps the peak to one list at a time, and costs nothing visible because the refresh
+ * happens behind an already-rendered cache.
  *
  * An instance that fails at any step keeps its cached applications and records why, so one
  * broken or unreachable instance never empties the list.
@@ -93,7 +98,8 @@ export function useApplications(instances: ArgoInstance[]): UseApplicationsResul
         });
       }
 
-      // Step 2 and 3, per instance and concurrently, so one slow instance never blocks another.
+      // Step 2: probe everything at once. Cheap, and it decides what is worth querying.
+      const targets: { instance: ArgoInstance; index: number }[] = [];
       await Promise.all(
         entries.map(async ({ instance, entry }, index) => {
           const shouldFetch =
@@ -119,23 +125,30 @@ export function useApplications(instances: ArgoInstance[]): UseApplicationsResul
             });
             return;
           }
-
-          try {
-            const result = await makeClient(instance).listApplications(controllers[index]?.signal);
-            if (cancelled) {
-              return;
-            }
-            await cache.write(instance.id, result.apps, result.resourceVersion);
-            patch(instance.id, { apps: result.apps, ageSeconds: 0, loading: false, error: undefined });
-          } catch (error) {
-            if (cancelled) {
-              return;
-            }
-            // The cached applications stay on screen: a stale list beats an empty one.
-            patch(instance.id, { loading: false, error: error as Error });
-          }
+          targets.push({ instance, index });
         }),
       );
+
+      // Step 3: one list at a time, so only one response is ever in flight and on the heap.
+      for (const { instance, index } of targets) {
+        if (cancelled) {
+          return;
+        }
+        try {
+          const result = await makeClient(instance).listApplications(controllers[index]?.signal);
+          if (cancelled) {
+            return;
+          }
+          await cache.write(instance.id, result.apps);
+          patch(instance.id, { apps: result.apps, ageSeconds: 0, loading: false, error: undefined });
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+          // The cached applications stay on screen: a stale list beats an empty one.
+          patch(instance.id, { loading: false, error: error as Error });
+        }
+      }
 
       if (!cancelled) {
         await saveReachability(storedReachability);

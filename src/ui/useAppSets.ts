@@ -52,6 +52,12 @@ export function useAppSets(instances: ArgoInstance[]): UseAppSetsResult {
     const controllers = instances.map(() => new AbortController());
     let cancelled = false;
 
+    const patchInstance = (instanceId: string, changes: Partial<AppSetInstanceState>) => {
+      setStates((current) =>
+        current.map((state) => (state.instance.id === instanceId ? { ...state, ...changes } : state)),
+      );
+    };
+
     async function run() {
       const stored = await loadReachability();
       if (cancelled) {
@@ -90,6 +96,9 @@ export function useAppSets(instances: ArgoInstance[]): UseAppSetsResult {
         );
       }
 
+      // Probed together, then listed one at a time: same 100 MB heap constraint as the
+      // applications hook, and an ApplicationSet list is small but not guaranteed to be.
+      const targets: { instance: ArgoInstance; index: number }[] = [];
       await Promise.all(
         instances.map(async (instance, index) => {
           const known = stored[instance.id] ?? UNKNOWN_REACHABILITY;
@@ -98,41 +107,43 @@ export function useAppSets(instances: ArgoInstance[]): UseAppSetsResult {
             return;
           }
           stored[instance.id] = reachability;
-
-          const patch = (changes: Partial<AppSetInstanceState>) => {
-            setStates((current) =>
-              current.map((state) => (state.instance.id === instance.id ? { ...state, ...changes } : state)),
-            );
-          };
-          patch({ reachability });
-
-          const derived = derivedByInstance.get(instance.id) ?? [];
+          patchInstance(instance.id, { reachability });
 
           if (reachability.state === "unreachable") {
-            patch({ loading: false, error: new UnreachableError(instance.name, reachability.reason) });
+            patchInstance(instance.id, {
+              loading: false,
+              error: new UnreachableError(instance.name, reachability.reason),
+            });
             return;
           }
-
-          try {
-            const result = await makeClient(instance).listApplicationSets(controllers[index]?.signal);
-            if (cancelled) {
-              return;
-            }
-            patch({
-              appSets: mergeAppSets(result.appSets, derived),
-              fromApi: result.appSets.length,
-              loading: false,
-              error: undefined,
-            });
-          } catch (error) {
-            if (cancelled) {
-              return;
-            }
-            // The derived entries stay on screen: they are the useful half of the answer.
-            patch({ appSets: derived, loading: false, error: error as Error });
-          }
+          targets.push({ instance, index });
         }),
       );
+
+      for (const { instance, index } of targets) {
+        if (cancelled) {
+          return;
+        }
+        const derived = derivedByInstance.get(instance.id) ?? [];
+        try {
+          const result = await makeClient(instance).listApplicationSets(controllers[index]?.signal);
+          if (cancelled) {
+            return;
+          }
+          patchInstance(instance.id, {
+            appSets: mergeAppSets(result.appSets, derived),
+            fromApi: result.appSets.length,
+            loading: false,
+            error: undefined,
+          });
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+          // The derived entries stay on screen: they are the useful half of the answer.
+          patchInstance(instance.id, { appSets: derived, loading: false, error: error as Error });
+        }
+      }
 
       if (!cancelled) {
         await saveReachability(stored);
