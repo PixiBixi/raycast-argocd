@@ -180,16 +180,32 @@ before it was removed.
 
 ### The rest of the checklist
 
-| Requirement                                       | State                                                          |
-| ------------------------------------------------- | -------------------------------------------------------------- |
-| Three to six screenshots, 2000x1250 PNG           | Absent                                                         |
-| `author` set to the Raycast account username      | Set to `pixibixi`, unconfirmed                                 |
-| Icon legible on light and dark backgrounds        | Never checked on light                                         |
-| Media in a top-level `media/` folder              | The icon is in `assets/`                                       |
-| `CHANGELOG.md` as `## [Title] - {PR_MERGE_DATE}`  | Uses Keep a Changelog instead                                  |
-| `license: MIT`, one category, `package-lock.json` | Done                                                           |
-| Command titles as `<verb> <noun>` or `<noun>`     | `ArgoCD Monitor` is redundant inside an extension named ArgoCD |
-| Latest `@raycast/api`, `npm run build` clean      | Done                                                           |
+| Requirement                                        | State                                  |
+| -------------------------------------------------- | -------------------------------------- |
+| Three to six screenshots in `metadata/`, 2000x1250 | Absent, and only a human can take them |
+| `author` set to the Raycast account username       | Set to `pixibixi`, unconfirmed         |
+| Icon legible on light and dark backgrounds         | Never checked on light                 |
+| Command titles as `<verb> <noun>` or `<noun>`      | Done                                   |
+| `CHANGELOG.md` as `## [Title] - {PR_MERGE_DATE}`   | Done                                   |
+| `license: MIT`, one category, `package-lock.json`  | Done                                   |
+| Latest `@raycast/api`, `npm run build` clean       | Done                                   |
+
+Two of those need a person at a keyboard, so they are the real remainder.
+
+**Screenshots.** The validator wants PNGs of exactly 2000x1250 in a top-level `metadata/`
+folder, taken on a retina screen, and it says so in those words. It also **skips the check
+entirely when the folder does not exist**, which is why `npm run lint` passes today and says
+nothing about them. That is the same shape as every other bug in this repository's history: a
+check that is named more broadly than what it verifies. Do not read a green `ray lint` as
+evidence that the metadata is in order.
+
+Screenshots also cannot be produced from a terminal. They need the extension open in Raycast
+against a real instance, which means whoever takes them decides what appears in them: an
+application list is a list of internal service names.
+
+**`author`.** It must equal the Raycast account username, not the GitHub one. They happen to be
+spelled the same here, which is exactly the sort of coincidence worth confirming rather than
+assuming.
 
 ### What publishing actually is
 
