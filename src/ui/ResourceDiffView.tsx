@@ -26,6 +26,15 @@ function describe(diff: ResourceDiff): string {
   return `${diff.kind || "Resource"} ${identity}`;
 }
 
+/**
+ * The fence language. `diff` activates Raycast's diff grammar, which is what colours the `@@`
+ * hunk headers, but its theme does not appear to tint the `+` and `-` lines themselves. There
+ * is no way to set a colour from markdown, so this is a constant to make the alternative
+ * (`patch`, an alias of the same grammar in most highlighters) a one-line change if a Raycast
+ * release ever styles one and not the other.
+ */
+const FENCE = "diff";
+
 function stats(diff: ResourceDiff): string {
   if (diff.tooLarge) {
     return "too large to diff";
@@ -54,10 +63,20 @@ function render(diffs: ResourceDiff[] | undefined, isLoading: boolean, resource?
   }
 
   const lines: string[] = [];
-  const heading = resource
-    ? []
-    : [`# ${modified.length} resource${modified.length === 1 ? "" : "s"} differ`, ""];
-  lines.push(...heading);
+
+  if (!resource) {
+    // With several resources the hunks run well past one screen, so the counts come first:
+    // they are what decides which one is worth scrolling to. This also carries the added and
+    // removed signal without depending on colour, which Raycast does not give the diff lines.
+    lines.push(`# ${modified.length} resource${modified.length === 1 ? "" : "s"} differ`, "");
+    if (modified.length > 1) {
+      for (const diff of modified) {
+        const summary = stats(diff);
+        lines.push(`- **${describe(diff)}**${summary ? ` ${summary}` : ""}`);
+      }
+      lines.push("");
+    }
+  }
 
   for (const diff of modified) {
     const summary = stats(diff);
@@ -69,7 +88,7 @@ function render(diffs: ResourceDiff[] | undefined, isLoading: boolean, resource?
       );
       continue;
     }
-    lines.push("```diff", diff.diff.trimEnd(), "```", "");
+    lines.push(`\`\`\`${FENCE}`, diff.diff.trimEnd(), "```", "");
   }
   return lines.join("\n");
 }
