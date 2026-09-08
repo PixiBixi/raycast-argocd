@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { filterByAppSet, projectAppSet, rollupAppSet } from "../../../src/lib/argocd/appset";
+import {
+  deriveAppSets,
+  filterByAppSet,
+  mergeAppSets,
+  projectAppSet,
+  rollupAppSet,
+} from "../../../src/lib/argocd/appset";
 import { projectSummary } from "../../../src/lib/argocd/project";
 import type { AppSummary } from "../../../src/lib/argocd/types";
 
@@ -25,6 +31,7 @@ describe("projectAppSet", () => {
       namespace: "team-a-apps",
       project: "team-a",
       conditionError: undefined,
+      derived: false,
     });
   });
 
@@ -149,5 +156,87 @@ describe("rollupAppSet", () => {
       app({ namespace: "team-a-apps", appSetName: "team-a-set", sync: "OutOfSync", health: "Degraded" }),
     ];
     expect(rollupAppSet(apps, appSet)).toEqual({ total: 1, outOfSync: 1, degraded: 1, attention: 1 });
+  });
+});
+
+describe("deriveAppSets", () => {
+  it("reconstructs one entry per distinct parent, marked as derived", () => {
+    const apps = [
+      app({ name: "a", namespace: "team-a-apps", appSetName: "team-a-set", project: "team-a" }),
+      app({ name: "b", namespace: "team-a-apps", appSetName: "team-a-set", project: "team-a" }),
+      app({ name: "c", namespace: "team-b-apps", appSetName: "team-b-set", project: "team-b" }),
+    ];
+    const derived = deriveAppSets(apps);
+    expect(derived.map((set) => `${set.namespace}/${set.name}`)).toEqual([
+      "team-a-apps/team-a-set",
+      "team-b-apps/team-b-set",
+    ]);
+    expect(derived.every((set) => set.derived)).toBe(true);
+    expect(derived[0]).toMatchObject({ project: "team-a", conditionError: undefined });
+  });
+
+  it("treats the same ApplicationSet name in two namespaces as two ApplicationSets", () => {
+    const apps = [
+      app({ name: "a", namespace: "team-a-apps", appSetName: "shared-set" }),
+      app({ name: "b", namespace: "team-b-apps", appSetName: "shared-set" }),
+    ];
+    expect(deriveAppSets(apps)).toHaveLength(2);
+  });
+
+  it("keeps instances apart", () => {
+    const apps = [
+      app({ name: "a", namespace: "team-a-apps", appSetName: "team-a-set", instanceId: "i1" }),
+      app({ name: "b", namespace: "team-a-apps", appSetName: "team-a-set", instanceId: "i2" }),
+    ];
+    expect(deriveAppSets(apps).map((set) => set.instanceId)).toEqual(["i1", "i2"]);
+  });
+
+  it("ignores applications with no ApplicationSet owner", () => {
+    expect(deriveAppSets([app({ appSetName: undefined })])).toEqual([]);
+    expect(deriveAppSets([])).toEqual([]);
+  });
+
+  it("builds a haystack so a derived entry is searchable like any other", () => {
+    const derived = deriveAppSets([
+      app({ namespace: "team-a-apps", appSetName: "team-a-set", project: "team-a" }),
+    ]);
+    expect(derived[0]?.haystack).toBe("team-a-set team-a-apps team-a");
+  });
+});
+
+describe("mergeAppSets", () => {
+  const fromApi = projectAppSet(APPSET, "i1");
+  if (!fromApi) {
+    throw new Error("fixture failed to project");
+  }
+  const derivedSame = deriveAppSets([
+    app({ namespace: "team-a-apps", appSetName: "team-a-set", project: "team-a" }),
+  ]);
+  const derivedOther = deriveAppSets([
+    app({ namespace: "team-b-apps", appSetName: "team-b-set", project: "team-b" }),
+  ]);
+
+  it("prefers the API entry, which is the only one carrying conditions", () => {
+    const merged = mergeAppSets([fromApi], derivedSame);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.derived).toBe(false);
+  });
+
+  it("keeps a derived entry the API did not return", () => {
+    const merged = mergeAppSets([fromApi], [...derivedSame, ...derivedOther]);
+    expect(merged).toHaveLength(2);
+    expect(merged.find((set) => set.name === "team-b-set")?.derived).toBe(true);
+  });
+
+  it("falls back entirely to the derived entries when the API returns nothing", () => {
+    // This is the real case on a server that has not enabled the ApplicationSet namespaces:
+    // 200 with an empty list, no error to report.
+    const merged = mergeAppSets([], [...derivedSame, ...derivedOther]);
+    expect(merged.map((set) => set.name)).toEqual(["team-a-set", "team-b-set"]);
+    expect(merged.every((set) => set.derived)).toBe(true);
+  });
+
+  it("returns the API entries when there is nothing to derive", () => {
+    expect(mergeAppSets([fromApi], [])).toEqual([fromApi]);
   });
 });

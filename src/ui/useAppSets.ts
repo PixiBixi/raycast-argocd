@@ -1,27 +1,37 @@
 /**
  * The ApplicationSets read path.
  *
- * ApplicationSets are fetched rather than derived from the applications cache, which costs one
- * small projected request per instance and buys the two things the cache cannot give: the
- * ApplicationSets that currently generate nothing, and status.conditions, which is where a
- * broken generator reports itself.
+ * Two sources, merged, because neither is sufficient on its own.
  *
- * They are held in memory for the life of the command rather than written to disk: there are an
- * order of magnitude fewer of them than applications, and they change when a generator changes,
- * not when a deployment does.
+ * GET /api/v1/applicationsets is the better source when it works: only it carries
+ * status.conditions, and only it knows about an ApplicationSet that has generated nothing. But
+ * it returns only ApplicationSets whose namespace the server has enabled for ApplicationSets,
+ * which is a switch separate from the one enabling applications in any namespace, and it
+ * filters silently. On a server where it is off, the endpoint answers 200 with an empty list
+ * while thousands of ApplicationSets exist, and no error is available to report.
+ *
+ * So the applications cache is the second source: every generated application carries an
+ * ownerReference naming its parent, so the parents can be reconstructed with no extra request
+ * and no extra permission. The API's answer wins wherever it has one.
+ *
+ * ApplicationSets are held in memory for the life of the command rather than written to disk:
+ * there are an order of magnitude fewer of them than applications, and the derived half comes
+ * from a cache that is already on disk.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AppSetSummary } from "../lib/argocd/appset";
+import { deriveAppSets, mergeAppSets, type AppSetSummary } from "../lib/argocd/appset";
 import { UnreachableError } from "../lib/argocd/errors";
 import { UNKNOWN_REACHABILITY, isProbeStale, type Reachability } from "../lib/argocd/probe";
 import type { ArgoInstance } from "../lib/config/instances";
-import { makeClient, probe } from "./deps";
+import { makeCache, makeClient, probe } from "./deps";
 import { loadReachability, saveReachability } from "./storage";
 
 export interface AppSetInstanceState {
   instance: ArgoInstance;
   appSets: AppSetSummary[];
+  /** How many of them the API returned, as opposed to reconstructed from the applications. */
+  fromApi: number;
   loading: boolean;
   error: Error | undefined;
   reachability: Reachability;
@@ -51,11 +61,34 @@ export function useAppSets(instances: ArgoInstance[]): UseAppSetsResult {
         instances.map((instance) => ({
           instance,
           appSets: [],
+          fromApi: 0,
           loading: true,
           error: undefined,
           reachability: stored[instance.id] ?? UNKNOWN_REACHABILITY,
         })),
       );
+
+      // The derived half comes from the applications cache the other command fills, so it
+      // renders before any ApplicationSet request has been made.
+      const cache = makeCache();
+      const derivedByInstance = new Map<string, AppSetSummary[]>();
+      await Promise.all(
+        instances.map(async (instance) => {
+          const entry = await cache.read(instance.id);
+          derivedByInstance.set(instance.id, deriveAppSets(entry?.apps ?? []));
+        }),
+      );
+      if (cancelled) {
+        return;
+      }
+      for (const instance of instances) {
+        const derived = derivedByInstance.get(instance.id) ?? [];
+        setStates((current) =>
+          current.map((state) =>
+            state.instance.id === instance.id ? { ...state, appSets: derived } : state,
+          ),
+        );
+      }
 
       await Promise.all(
         instances.map(async (instance, index) => {
@@ -73,6 +106,8 @@ export function useAppSets(instances: ArgoInstance[]): UseAppSetsResult {
           };
           patch({ reachability });
 
+          const derived = derivedByInstance.get(instance.id) ?? [];
+
           if (reachability.state === "unreachable") {
             patch({ loading: false, error: new UnreachableError(instance.name, reachability.reason) });
             return;
@@ -83,12 +118,18 @@ export function useAppSets(instances: ArgoInstance[]): UseAppSetsResult {
             if (cancelled) {
               return;
             }
-            patch({ appSets: result.appSets, loading: false, error: undefined });
+            patch({
+              appSets: mergeAppSets(result.appSets, derived),
+              fromApi: result.appSets.length,
+              loading: false,
+              error: undefined,
+            });
           } catch (error) {
             if (cancelled) {
               return;
             }
-            patch({ loading: false, error: error as Error });
+            // The derived entries stay on screen: they are the useful half of the answer.
+            patch({ appSets: derived, loading: false, error: error as Error });
           }
         }),
       );

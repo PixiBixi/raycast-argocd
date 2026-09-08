@@ -1,6 +1,6 @@
 import { Action, ActionPanel, Color, Icon, List, useNavigation, Keyboard } from "@raycast/api";
 import { useEffect, useMemo, useState } from "react";
-import { rollupAppSet, type AppSetSummary } from "./lib/argocd/appset";
+import { appSetKey, rollupAppSet, type AppSetSummary } from "./lib/argocd/appset";
 import type { AppSummary } from "./lib/argocd/types";
 import type { ArgoInstance } from "./lib/config/instances";
 import { rankAppSets } from "./lib/search/score";
@@ -103,12 +103,8 @@ export default function SearchApplicationSets() {
     >
       <List.EmptyView
         icon={Icon.Layers}
-        title={instances.length === 0 ? "No ArgoCD instance configured" : "No ApplicationSet found"}
-        description={
-          instances.length === 0
-            ? "Add one from the Manage Instances command."
-            : "Refresh to query the instances again."
-        }
+        title={emptyTitle(instances.length, apps.length, query)}
+        description={emptyDescription(instances.length, apps.length, query)}
         actions={
           <ActionPanel>
             <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={refresh} />
@@ -125,14 +121,14 @@ export default function SearchApplicationSets() {
           <List.Section
             key={state.instance.id}
             title={showInstance ? state.instance.name : "ApplicationSets"}
-            subtitle={state.error ? `${rows.length} shown, ${state.error.name}` : `${rows.length} shown`}
+            subtitle={sectionSubtitle(state, rows.length)}
           >
             {rows.map((appSet) => {
               const rollup = rollupAppSet(apps, appSet);
               const url = makeClient(state.instance).appSetUrl(appSet.name, appSet.namespace);
               return (
                 <List.Item
-                  key={`${appSet.instanceId}/${appSet.namespace}/${appSet.name}`}
+                  key={appSetKey(appSet)}
                   icon={{
                     source: Icon.Layers,
                     tintColor: appSet.conditionError ? Color.Red : Color.SecondaryText,
@@ -214,4 +210,46 @@ export default function SearchApplicationSets() {
       ) : null}
     </List>
   );
+}
+
+function sectionSubtitle(
+  state: { error: Error | undefined; fromApi: number; appSets: AppSetSummary[] },
+  shown: number,
+): string {
+  if (state.error) {
+    return `${shown} shown, ${state.error.name}`;
+  }
+  const derived = state.appSets.length - state.fromApi;
+  if (state.fromApi === 0 && derived > 0) {
+    return `${shown} shown, all reconstructed from their applications`;
+  }
+  if (derived > 0) {
+    return `${shown} shown, ${derived} reconstructed from their applications`;
+  }
+  return `${shown} shown`;
+}
+
+function emptyTitle(instanceCount: number, appCount: number, query: string): string {
+  if (instanceCount === 0) {
+    return "No ArgoCD instance configured";
+  }
+  if (appCount === 0) {
+    return "No applications cached yet";
+  }
+  return query.trim().length > 0 ? `No ApplicationSet matches "${query.trim()}"` : "No ApplicationSet found";
+}
+
+function emptyDescription(instanceCount: number, appCount: number, query: string): string {
+  if (instanceCount === 0) {
+    return "Add one from the Manage Instances command.";
+  }
+  if (appCount === 0) {
+    // Both halves of the answer need it: the derived half reads the applications cache, and an
+    // empty API answer is indistinguishable from "no ApplicationSets" without it.
+    return "Open Search Applications once to fill the cache. ApplicationSets are also reconstructed from the applications they own.";
+  }
+  if (query.trim().length > 0) {
+    return "Try the namespace or the project instead.";
+  }
+  return "Neither the ApplicationSet API nor the applications in the cache reported one.";
 }
