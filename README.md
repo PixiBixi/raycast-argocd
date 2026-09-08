@@ -3,7 +3,7 @@
 Search applications across several ArgoCD instances, then open, inspect or sync the one you
 found. Built for instances holding thousands of applications behind a VPN.
 
-📖 **How it works and why:** [`openwiki/quickstart.md`](openwiki/quickstart.md). This file is
+📖 **How it works and why:** [`openwiki/quickstart.md`](https://github.com/PixiBixi/raycast-argocd/blob/main/openwiki/quickstart.md). This file is
 the usage reference.
 
 ## 🔍 Commands
@@ -67,7 +67,7 @@ The CLI session mode reads the refresh token `argocd login --sso` stores alongsi
 so it renews itself too. A bearer with no readable expiry, such as an API token written into the
 config by hand, is left alone and never renewed.
 
-Read [`openwiki/domain/authentication.md`](openwiki/domain/authentication.md) before choosing
+Read [`openwiki/domain/authentication.md`](https://github.com/PixiBixi/raycast-argocd/blob/main/openwiki/domain/authentication.md) before choosing
 the third.
 
 ### Single sign-on setup
@@ -83,7 +83,7 @@ provider:
 
 That URI is the one the official ArgoCD CLI uses on its default port, so registering it also
 makes `argocd login --sso` work for everyone. Full reasoning:
-[`openwiki/domain/authentication.md`](openwiki/domain/authentication.md#what-it-needs-once).
+[`openwiki/domain/authentication.md`](https://github.com/PixiBixi/raycast-argocd/blob/main/openwiki/domain/authentication.md#what-it-needs-once).
 
 Then use **Log in with single sign-on**. The browser opens once, and that is the last time you
 are asked. If the client is not public, the extension says so and names `oidc.cliClientID` as
@@ -169,7 +169,7 @@ naming the application, the instance and its environment.
 
 🔒 On a `prod` instance these actions do not exist, and the client refuses a write independently
 of the UI. See
-[`openwiki/architecture/commands.md`](openwiki/architecture/commands.md#the-write-guards).
+[`openwiki/architecture/commands.md`](https://github.com/PixiBixi/raycast-argocd/blob/main/openwiki/architecture/commands.md#the-write-guards).
 
 ## 📊 Menu bar
 
@@ -207,7 +207,7 @@ second and lists still render from cache. `⌘T` re-probes; the result is cached
 | 🔴 "unreachable, check your VPN"         | Connect the VPN, then `⌘T` in Manage Instances or `⌘⇧R` in the search command.                                                                                                                                  |
 | 🟠 amber dot with a status               | The instance answered something other than 2xx on `/api/version`. Usually the URL points at something that is not an ArgoCD.                                                                                    |
 | "cached 12 min ago, refresh failed"      | The cached list is shown on purpose. The reason is in the section subtitle; `⌘R` retries that instance alone.                                                                                                   |
-| Search ApplicationSets is empty          | Open Search Applications once so the reconstruction has a cache. [Why](openwiki/domain/argocd-api.md#applicationsets-are-filtered-silently).                                                                    |
+| Search ApplicationSets is empty          | Open Search Applications once so the reconstruction has a cache. [Why](https://github.com/PixiBixi/raycast-argocd/blob/main/openwiki/domain/argocd-api.md#applicationsets-are-filtered-silently).               |
 | The sync action is missing               | Write operations are off, or it is a `prod` instance where they cannot be turned on.                                                                                                                            |
 | Results are truncated                    | The list renders at most `Max Results` rows. Narrow the search.                                                                                                                                                 |
 
@@ -218,19 +218,19 @@ npm test && npm run typecheck && npm run lint && npm run build && ./scripts/chec
 ```
 
 All five are required before a commit. What each catches, the optional real-instance test, and
-the repository conventions: [`openwiki/development.md`](openwiki/development.md).
+the repository conventions: [`openwiki/development.md`](https://github.com/PixiBixi/raycast-argocd/blob/main/openwiki/development.md).
 
 ## 📚 Documentation
 
-|                                                                     |                                                                     |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| 🧭 [Quickstart](openwiki/quickstart.md)                             | What this is, the four constraints that shaped it, where to go next |
-| 🏗️ [Layering](openwiki/architecture/layering.md)                    | The `lib`/`ui` boundary and why 485 tests need no Raycast runtime   |
-| ⚡ [Read path](openwiki/architecture/read-path.md)                  | The 100 MB heap limit, streaming, the cache, capped rendering       |
-| 🧩 [Commands](openwiki/architecture/commands.md)                    | The four commands, their views, the three write guards              |
-| ⚠️ [What the ArgoCD API does not do](openwiki/domain/argocd-api.md) | Four things it appears to do and does not. Read this first.         |
-| 🔐 [Authentication](openwiki/domain/authentication.md)              | The three modes, the provider findings, where credentials live      |
-| 🧰 [Development](openwiki/development.md)                           | The gate, the leak gate, the CI, the conventions                    |
+|                                                                                                                          |                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| 🧭 [Quickstart](https://github.com/PixiBixi/raycast-argocd/blob/main/openwiki/quickstart.md)                             | What this is, the four constraints that shaped it, where to go next |
+| 🏗️ [Layering](https://github.com/PixiBixi/raycast-argocd/blob/main/openwiki/architecture/layering.md)                    | The `lib`/`ui` boundary and why 485 tests need no Raycast runtime   |
+| ⚡ [Read path](https://github.com/PixiBixi/raycast-argocd/blob/main/openwiki/architecture/read-path.md)                  | The 100 MB heap limit, streaming, the cache, capped rendering       |
+| 🧩 [Commands](https://github.com/PixiBixi/raycast-argocd/blob/main/openwiki/architecture/commands.md)                    | The four commands, their views, the three write guards              |
+| ⚠️ [What the ArgoCD API does not do](https://github.com/PixiBixi/raycast-argocd/blob/main/openwiki/domain/argocd-api.md) | Four things it appears to do and does not. Read this first.         |
+| 🔐 [Authentication](https://github.com/PixiBixi/raycast-argocd/blob/main/openwiki/domain/authentication.md)              | The three modes, the provider findings, where credentials live      |
+| 🧰 [Development](https://github.com/PixiBixi/raycast-argocd/blob/main/openwiki/development.md)                           | The gate, the leak gate, the CI, the conventions                    |
 
 ## 📄 Licence
 

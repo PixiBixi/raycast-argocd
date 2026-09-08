@@ -263,6 +263,12 @@ Then open the pull request by hand against a fork of `raycast/extensions`, copyi
 `dist/store-payload/` to `extensions/argocd/`. Doing it by hand is the point: the payload is
 reviewable before it leaves.
 
+One thing the payload cannot judge for you: `README.md` becomes the store listing page, and its
+Install section currently reads "Not published yet". Rewrite that line in the same commit that
+opens the pull request, or the listing contradicts itself. The wiki links in it are absolute
+URLs for the same reason: relative ones pointed at `openwiki/`, which does not travel, and the
+payload now refuses any relative link it cannot resolve.
+
 An extension is **not versioned**. There is no `version` field in `package.json`; Raycast reads
 `CHANGELOG.md`, where `{PR_MERGE_DATE}` is replaced when the pull request merges. Any git tag in
 this repository is for local bookkeeping only and means nothing to Raycast.

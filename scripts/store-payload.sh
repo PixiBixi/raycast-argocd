@@ -98,7 +98,28 @@ fi
 # 4. Nothing identifying, and nothing personal, in what ships.
 ./scripts/check-no-secrets.sh >/dev/null || refuse "the leak gate failed; run ./scripts/check-no-secrets.sh"
 
-# 5. It has to build.
+# 5. Every relative link in the shipped README has to resolve inside the payload. Ten of them
+#    pointed at openwiki/, which does not travel, so they would have 404'd in the monorepo.
+readme_broken=$(
+  grep -oE '\]\([^)#][^)]*\)' README.md \
+    | sed -E 's/^\]\(//; s/\)$//; s/#.*$//' \
+    | grep -vE '^[a-z]+://' \
+    | sort -u \
+    | while IFS= read -r link; do
+        [ -n "$link" ] || continue
+        kept=0
+        for entry in "${KEEP[@]}"; do
+          case "$link" in "$entry"|"$entry"/*) kept=1; break ;; esac
+        done
+        [ "$kept" -eq 1 ] && [ -e "$link" ] || printf '  %s\n' "$link"
+      done
+)
+if [ -n "$readme_broken" ]; then
+  refuse "README.md links to paths absent from the payload; make them absolute URLs:"
+  printf '%s\n' "$readme_broken" >&2
+fi
+
+# 6. It has to build.
 npm run build >/dev/null 2>&1 || refuse "npm run build failed"
 
 if [ "$fail" -ne 0 ]; then
