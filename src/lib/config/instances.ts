@@ -50,6 +50,15 @@ export class ValidationError extends Error {
 const ENVIRONMENTS: readonly Environment[] = ["prod", "preprod", "dev"];
 const AUTH_MODES: readonly AuthMode[] = ["sso", "cli", "token"];
 
+/**
+ * Loopback by name or by address, including the IPv6 form the URL parser hands back in
+ * brackets. Not a substring match: an attacker-chosen `localhost.example.com` must not pass.
+ */
+export function isLoopback(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
 export function normalizeBaseUrl(raw: string): string {
   const trimmed = raw.trim();
   if (trimmed.length === 0) {
@@ -65,11 +74,19 @@ export function normalizeBaseUrl(raw: string): string {
     throw new ValidationError("The server URL is not a valid URL.", "baseUrl");
   }
 
-  if (url.protocol !== "https:") {
-    throw new ValidationError("The server URL must use https.", "baseUrl");
-  }
-  if (url.hostname.length === 0 || !url.hostname.includes(".")) {
-    throw new ValidationError("The server URL must carry a hostname.", "baseUrl");
+  // Cleartext and a dotless hostname are allowed for loopback only. Traffic to loopback
+  // never leaves the machine, so https buys nothing there, and it is how ArgoCD is reached
+  // locally: kubectl port-forward svc/argocd-server, then argocd login localhost:8080
+  // --plaintext. Everything else must be https, which is what protects a real token.
+  if (!isLoopback(url.hostname)) {
+    if (url.protocol !== "https:") {
+      throw new ValidationError("The server URL must use https, except on localhost.", "baseUrl");
+    }
+    if (url.hostname.length === 0 || !url.hostname.includes(".")) {
+      throw new ValidationError("The server URL must carry a hostname.", "baseUrl");
+    }
+  } else if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new ValidationError("The server URL must use http or https.", "baseUrl");
   }
 
   const path = url.pathname.replace(/\/+$/, "");

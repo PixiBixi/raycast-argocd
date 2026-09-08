@@ -54,9 +54,10 @@ if hits=$(tracked_files | xargs -r grep -nE '\bgke_[a-z0-9-]+_' 2>/dev/null); th
 fi
 
 # 3. Hostnames. Only example hosts, loopback and a short allowlist of public services may
-#    appear. `.internal.` and `.local.` are called out separately because they are the
+#    appear. `notlocalhost` is a deliberate negative fixture: it proves the loopback
+#    exemption is not a substring match. `.internal.` and `.local.` are called out separately because they are the
 #    shape a private cluster endpoint takes.
-allowed_host='(([A-Za-z0-9-]+\.)*example\.(com|org|dev|net)|localhost|127\.0\.0\.1|argo-cd\.readthedocs\.io|developers\.raycast\.com|(www\.)?raycast\.com|json\.schemastore\.org|github\.com|raw\.githubusercontent\.com|nodejs\.org|argoproj\.github\.io|kubernetes\.default\.svc)'
+allowed_host='(([A-Za-z0-9-]+\.)*example\.(com|org|dev|net)|localhost|127\.0\.0\.1|argo-cd\.readthedocs\.io|developers\.raycast\.com|(www\.)?raycast\.com|json\.schemastore\.org|github\.com|raw\.githubusercontent\.com|nodejs\.org|argoproj\.github\.io|kubernetes\.default\.svc|notlocalhost)'
 if hits=$(tracked_files | xargs -r grep -nEo 'https?://[A-Za-z0-9._-]+' 2>/dev/null | grep -vE "https?://${allowed_host}"); then
   report "a URL points at a host that is neither an example nor an allowlisted public service" "$hits"
 fi

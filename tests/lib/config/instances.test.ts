@@ -202,3 +202,32 @@ describe("serializeInstances", () => {
     expect(parseInstances(serializeInstances(list))).toEqual(list);
   });
 });
+
+describe("loopback is the one place cleartext is allowed", () => {
+  it("accepts http on localhost, which is how a port-forwarded ArgoCD is reached", () => {
+    expect(normalizeBaseUrl("http://localhost:8080")).toBe("http://localhost:8080");
+  });
+
+  it("accepts http on the loopback addresses, v4 and v6", () => {
+    expect(normalizeBaseUrl("http://127.0.0.1:8080")).toBe("http://127.0.0.1:8080");
+    expect(normalizeBaseUrl("http://[::1]:8080")).toBe("http://[::1]:8080");
+  });
+
+  it("still accepts https on localhost", () => {
+    expect(normalizeBaseUrl("https://localhost:8080")).toBe("https://localhost:8080");
+  });
+
+  it("keeps refusing cleartext everywhere else, which is what protects a real token", () => {
+    expect(() => normalizeBaseUrl("http://argocd.example.com")).toThrowError(/must use https/);
+  });
+
+  it("is not a substring match, so a lookalike host does not inherit the exemption", () => {
+    expect(() => normalizeBaseUrl("http://localhost.example.com")).toThrowError(/must use https/);
+    expect(() => normalizeBaseUrl("http://notlocalhost")).toThrowError(/must use https/);
+    expect(() => normalizeBaseUrl("http://127.0.0.1.example.com")).toThrowError(/must use https/);
+  });
+
+  it("refuses a protocol that is neither http nor https even on loopback", () => {
+    expect(() => normalizeBaseUrl("ftp://localhost")).toThrowError(/must use http or https/);
+  });
+});
