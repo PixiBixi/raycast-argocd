@@ -50,20 +50,44 @@ Stored in Raycast's local storage. Nothing leaves the Mac, and no hostname is co
 
 ## 🔐 Authentication
 
-| Mode               | Renews itself     | Setup                                  |
-| ------------------ | ----------------- | -------------------------------------- |
-| 🥇 Single sign-on  | **Yes**, silently | One browser login. Default.            |
-| argocd CLI session | No                | `argocd login <host> --sso --grpc-web` |
-| API token          | No                | **Set API token** in Manage Instances  |
+Three modes, and they are not equivalent. Only one keeps your own identity and your own RBAC.
 
-**Single sign-on** needs a public OIDC client once, because ArgoCD's web client is confidential:
-create a public client with PKCE and the redirect URI `http://localhost:8085/auth/callback`,
-then set `oidc.cliClientID` in `argocd-cm`. Full spec and reasoning:
+| Mode               | Identity                           | Renews itself     | Setup                                  |
+| ------------------ | ---------------------------------- | ----------------- | -------------------------------------- |
+| 🥇 Single sign-on  | **Yours**                          | **Yes**, silently | One browser login. Default.            |
+| argocd CLI session | The CLI session's                  | No                | `argocd login <host> --sso --grpc-web` |
+| ⚠️ API token       | The token's account, **not yours** | No                | **Set API token**                      |
+
+Read [`openwiki/domain/authentication.md`](openwiki/domain/authentication.md) before choosing
+anything but the first.
+
+### Single sign-on setup
+
+It needs a **public** OIDC client, because ArgoCD's web client is confidential and a token
+exchange on it without a secret is refused. Once, with whoever administers your identity
+provider:
+
+1. Create a public OIDC client: no secret, PKCE required, token endpoint auth method `none`,
+   grants `authorization_code` and `refresh_token`, redirect URI
+   `http://localhost:8085/auth/callback`, assigned to the same group as the ArgoCD app.
+2. Set `oidc.cliClientID: <the new client id>` in `argocd-cm`, on each instance.
+
+That URI is the one the official ArgoCD CLI uses on its default port, so registering it also
+makes `argocd login --sso` work for everyone. Full reasoning:
 [`openwiki/domain/authentication.md`](openwiki/domain/authentication.md#what-it-needs-once).
-Then use **Log in with single sign-on**. The browser opens once, and that is the last time you
-are asked.
 
-**API token**, if the above is not in place yet:
+Then use **Log in with single sign-on**. The browser opens once, and that is the last time you
+are asked. If the client is not public, the extension says so and names `oidc.cliClientID` as
+the fix.
+
+### ⚠️ API token, only where single sign-on cannot run
+
+An ArgoCD account token carries **the account's permissions, not yours**. That means your
+requests stop being attributable in the audit log, and the token can grant more access than
+your own account has. It is a personal workaround, not a way to onboard a team, and creating one
+needs `accounts, update`, which usually means an administrator.
+
+If you still need it:
 
 ```sh
 argocd account generate-token --account <account-with-apiKey> --server argocd.example.com --grpc-web
@@ -72,6 +96,10 @@ argocd account generate-token --account <account-with-apiKey> --server argocd.ex
 Without `--expires-in` it never expires. That command needs a session itself, so bootstrap it
 from the web UI: copy the `argocd.token` cookie and pass it as `--auth-token`. ⚠️ Generating a
 token **writes** to `argocd-secret`, so do not run it against an instance you may only read.
+
+Give each machine its own token id, `raycast-<hostname>` rather than `raycast`: a token's value
+cannot be read back, so replacing one invalidates it, and a shared id means configuring a second
+machine silently breaks the first.
 
 Set the instance's mode to `API token`, then **Set API token**. It goes into Raycast's own
 encrypted storage, which only this extension can read, and the write is verified by reading it

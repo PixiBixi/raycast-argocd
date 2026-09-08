@@ -1520,3 +1520,48 @@ callback returns 200, which proves the probe method sound. No redirect URI can b
 provider, so neither the loopback flow nor Raycast's `OAuth.PKCEClient` is available there. The
 mode is kept rather than deleted because it is correct, tested, and works on any ArgoCD whose
 provider registers the loopback URI, which is the same one `argocd login --sso` requires.
+
+### A13: the token mode is a workaround, not an alternative
+
+Recorded after the three account tokens were created by hand and the operator pushed back: "je
+suis admin donc c'est ok, also ça veut dire un token avec des droits qui ne sont pas inherit de
+notre compte donc chiant". Both halves are correct, and the second is not a nuisance but a
+security property.
+
+**An ArgoCD account token carries the account's permissions, not the operator's.** On the target
+deployment the RBAC binds `argocd-admins` to `role:admin` and `argocd-rnd` to `role:readonly`,
+and grants `sa-argocd-scanner` a global `applications, get` and `applicationsets, get`. So a
+token for that account:
+
+- makes every request appear under the service account, which is the opposite of what an audit
+  log on a production instance is for;
+- can grant **more** than the holder has, since anyone scoped to one project gets global read by
+  holding it, which is a privilege escalation dressed as configuration;
+- can grant **less**, since an administrator holding it cannot sync at all.
+
+And creating one needs `accounts, update`, which comes only with `role:admin` here. So it is not
+a team onboarding path either; it worked for one operator because of a privilege they happen to
+have.
+
+**Decision: do not build the in-app token generation** that was proposed and nearly started. A
+polished flow for minting and distributing shared service identities would institutionalise the
+wrong pattern. The mode stays, because it is the only thing that runs where `sso` cannot, but
+the extension does not make it welcoming: no generation UI, and the only operations offered on
+an existing token are replace and revoke.
+
+**Also established, from a question rather than a bug.** A token's value cannot be read back:
+`accountToken` in the swagger carries `id`, `issuedAt` and `expiresAt` and no value, because
+ArgoCD returns it once and stores only the id. So "replace" is delete-then-create and
+invalidates the old one immediately, which means each installation needs its own token id
+(`raycast-<hostname>`), or configuring a second machine silently breaks the first. Worth noting
+how this was found: it was asked before the feature was written, not discovered after.
+
+**And a dead end ruled out.** `argonaut`, a TUI for ArgoCD, was raised as a possible model. It
+has no authentication code at all: it reads `~/.config/argocd/config` and instructs the user to
+run `argocd login`, which is precisely what is blocked here. It would be no easier, with one
+fewer mode than this extension already has. What it does point at is worth keeping: the credential
+belongs in the one place every ArgoCD tool reads, so the `cli` mode remains the way to avoid
+configuring a credential inside Raycast at all.
+
+The redirect URI has been requested from the identity provider's owners. `sso` is the mode this
+was all built for, and the documentation now says so rather than presenting three equals.

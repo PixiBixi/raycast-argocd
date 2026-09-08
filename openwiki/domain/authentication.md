@@ -84,18 +84,27 @@ Read from the provider's own discovery document, which is public:
 them, because without the first there is no refresh token and without the second there is no id
 token to use as a bearer.
 
-### What is still unverified, and currently unusable
+### What is still unverified
 
-**The flow has never completed against the real provider, and cannot be.** Probing the
-provider's authorize endpoint shows that the only redirect URI registered on ArgoCD's client is
-ArgoCD's own web callback: the loopback URI and Raycast's own
+**The flow has never completed against a real provider.** On the target deployment it cannot
+yet: probing the provider's authorize endpoint shows the only redirect URI registered on
+ArgoCD's client is ArgoCD's own web callback. The loopback URI and Raycast's own
 (`https://raycast.com/redirect`) are both refused with "the redirect_uri parameter must be a
-Login redirect URI in the client app settings", while the web callback returns 200. Since no
-redirect URI can be added, no OIDC flow of this extension's own can run on that deployment.
+Login redirect URI in the client app settings", while the web callback returns 200, which
+proves the probe sound.
 
-The mode is kept rather than removed because it is correct and tested, and it works on any
-ArgoCD whose identity provider does register the loopback URI, which is the same one
-`argocd login --sso` needs. Every step is tested against stubs: 33 cases in
+Adding `http://localhost:8085/auth/callback` to that client has been requested. It is one line
+of provider configuration, and it is the URI the official ArgoCD CLI uses on its default port,
+so today nobody on that team can run `argocd login --sso` either. The request is framed as a
+security matter rather than a convenience: without it the only workaround is sharing a service
+account token, which is what the section above describes.
+
+Once it lands, this is the mode to use everywhere, and the first real login will be the first
+real test of the exchange. Every step is covered against stubs: 33 cases in
+[`tests/lib/auth/oidc.test.ts`](../../tests/lib/auth/oidc.test.ts) and 15 in
+[`tests/lib/auth/sso.test.ts`](../../tests/lib/auth/sso.test.ts), including that the verifier
+never appears in the authorization request, that no `client_secret` is ever sent, and that no
+error message contains a token. Every step is tested against stubs: 33 cases in
 [`tests/lib/auth/oidc.test.ts`](../../tests/lib/auth/oidc.test.ts) and 15 in
 [`tests/lib/auth/sso.test.ts`](../../tests/lib/auth/sso.test.ts), including that the verifier
 never appears in the authorization request, that no `client_secret` is ever sent, and that no
@@ -103,6 +112,49 @@ error message contains a token. The first real login will be the first real test
 
 `loginWithSso` refuses to report success without a refresh token, since without one this mode
 is no better than pasting a token.
+
+## The token mode bypasses per-user RBAC
+
+Worth stating plainly, because the mode is convenient and its cost is invisible.
+
+An ArgoCD account token carries **the account's permissions, not the operator's**. On a
+deployment whose RBAC binds identity groups to roles, for example
+
+```
+g, argocd-admins, role:admin
+g, argocd-rnd,    role:readonly
+```
+
+and grants a service account a global read
+
+```
+p, sa-argocd-scanner, applications,    get, */*, allow
+p, sa-argocd-scanner, applicationsets, get, */*, allow
+```
+
+then a token for that account has three consequences.
+
+**Audit trails stop identifying anyone.** Every request the extension makes appears under the
+service account. On a production instance that is the opposite of what an audit log is for.
+
+**It can grant more than the operator has.** Someone whose own account is scoped to one project
+gets global read across every project by holding the token. Distributing such a token is a
+privilege escalation dressed up as configuration.
+
+**It can also grant less.** An administrator using that same token cannot sync anything, since
+the account has no `applications, sync`. The extension's write guards are then redundant with
+a server-side refusal, which is fine on production and a nuisance on development.
+
+And creating one is not something most operators can do: it needs `accounts, update`, which
+here comes only with `role:admin`. So the mode is not a team onboarding path. It is a personal
+workaround for an environment where `sso` cannot run, and the extension deliberately does not
+make it more welcoming than that: there is no in-app token generation, and the only operation
+offered on an existing token is to replace or revoke it.
+
+A token's value is also unrecoverable. ArgoCD returns it once at creation and stores only its
+id, so "replace" means delete and create, which invalidates the old one immediately. Give each
+installation its own token id for that reason, `raycast-<hostname>` rather than `raycast`, or
+configuring a second machine silently breaks the first.
 
 ## The argocd CLI session
 

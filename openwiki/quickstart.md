@@ -111,11 +111,11 @@ thing it claims to have done will eventually claim something false.**
 Three things are unverified rather than unknown, and are stated here so nobody assumes
 otherwise.
 
-- **Single sign-on cannot run on the target deployment.** Probing the provider shows the only
-  redirect URI registered on ArgoCD's client is ArgoCD's own web callback; the loopback URI and
-  Raycast's own are both refused, and no redirect URI can be added. The mode is correct and
-  tested and works wherever the loopback URI is registered, but there it is unusable. See
-  [authentication](domain/authentication.md#what-is-still-unverified-and-currently-unusable).
+- **Single sign-on has never completed against a real provider.** On the target deployment the
+  loopback redirect URI is not registered on ArgoCD's OIDC client, which the provider refuses;
+  adding it has been requested. Until then the only usable mode there is an API token, which
+  carries a service account's identity rather than the operator's and is a workaround, not the
+  design. See [authentication](domain/authentication.md#the-token-mode-bypasses-per-user-rbac).
 - **`ArgoClient.resourceUrl` is inferred.** Its deep-link shape was read off an observed
   browser URL and has not been confirmed to select the right resource.
 - **ApplicationSets on production are unmeasured.** The development instance returns an empty
