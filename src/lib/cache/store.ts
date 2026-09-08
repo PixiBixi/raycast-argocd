@@ -13,12 +13,16 @@
 
 import type { AppSummary } from "../argocd/types";
 
-export const CACHE_SCHEMA = 1;
+/**
+ * Bumped to 2 when resourceVersion left the entry: list responses are streamed now, and the
+ * top-level metadata is never seen. A schema change discards old entries, which one refresh
+ * rebuilds.
+ */
+export const CACHE_SCHEMA = 2;
 
 export interface CacheEntry {
   schema: number;
   fetchedAt: number;
-  resourceVersion: string | undefined;
   apps: AppSummary[];
 }
 
@@ -82,17 +86,12 @@ export class ProjectionCache {
         (app as AppSummary).name.length > 0,
     );
 
-    return {
-      schema: CACHE_SCHEMA,
-      fetchedAt: entry.fetchedAt,
-      resourceVersion: typeof entry.resourceVersion === "string" ? entry.resourceVersion : undefined,
-      apps,
-    };
+    return { schema: CACHE_SCHEMA, fetchedAt: entry.fetchedAt, apps };
   }
 
-  async write(instanceId: string, apps: AppSummary[], resourceVersion: string | undefined): Promise<void> {
+  async write(instanceId: string, apps: AppSummary[]): Promise<void> {
     const target = this.path(instanceId);
-    const entry: CacheEntry = { schema: CACHE_SCHEMA, fetchedAt: this.deps.now(), resourceVersion, apps };
+    const entry: CacheEntry = { schema: CACHE_SCHEMA, fetchedAt: this.deps.now(), apps };
 
     await this.deps.mkdir(this.rootDir);
     const temporary = `${target}.tmp`;

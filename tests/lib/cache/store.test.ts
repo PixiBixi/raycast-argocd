@@ -46,18 +46,17 @@ describe("write and read", () => {
     const { deps } = memoryFs();
     const cache = new ProjectionCache(ROOT, deps);
 
-    await cache.write("i1", [app("app-one"), app("app-two")], "9001");
+    await cache.write("i1", [app("app-one"), app("app-two")]);
     const entry = await cache.read("i1");
 
     expect(entry?.schema).toBe(CACHE_SCHEMA);
     expect(entry?.fetchedAt).toBe(1_000_000);
-    expect(entry?.resourceVersion).toBe("9001");
     expect(entry?.apps.map((a) => a.name)).toEqual(["app-one", "app-two"]);
   });
 
   it("creates the cache directory and writes through a temporary file", async () => {
     const { files, deps } = memoryFs();
-    await new ProjectionCache(ROOT, deps).write("i1", [app("app-one")], undefined);
+    await new ProjectionCache(ROOT, deps).write("i1", [app("app-one")]);
 
     expect(deps.mkdir).toHaveBeenCalledWith(ROOT);
     expect(deps.writeFile).toHaveBeenCalledWith(`${ROOT}/i1.json.tmp`, expect.any(String));
@@ -68,8 +67,8 @@ describe("write and read", () => {
   it("keeps one file per instance", async () => {
     const { files, deps } = memoryFs();
     const cache = new ProjectionCache(ROOT, deps);
-    await cache.write("i1", [app("app-one")], undefined);
-    await cache.write("i2", [app("app-two")], undefined);
+    await cache.write("i1", [app("app-one")]);
+    await cache.write("i2", [app("app-two")]);
     expect([...files.keys()].sort()).toEqual([`${ROOT}/i1.json`, `${ROOT}/i2.json`]);
   });
 });
@@ -91,7 +90,7 @@ describe("read of a damaged cache", () => {
   });
 
   it("discards a cache written by an older schema instead of migrating it", async () => {
-    const old = JSON.stringify({ schema: 0, fetchedAt: 1, resourceVersion: "1", apps: [app("app-one")] });
+    const old = JSON.stringify({ schema: 1, fetchedAt: 1, resourceVersion: "1", apps: [app("app-one")] });
     const { deps } = memoryFs({ [`${ROOT}/i1.json`]: old });
     await expect(new ProjectionCache(ROOT, deps).read("i1")).resolves.toBeUndefined();
   });
@@ -112,7 +111,6 @@ describe("read of a damaged cache", () => {
     const mixed = JSON.stringify({
       schema: CACHE_SCHEMA,
       fetchedAt: 1,
-      resourceVersion: undefined,
       apps: [app("app-one"), null, 42, { name: "" }, { project: "team-a" }],
     });
     const { deps } = memoryFs({ [`${ROOT}/i1.json`]: mixed });
@@ -122,7 +120,7 @@ describe("read of a damaged cache", () => {
 });
 
 describe("staleness", () => {
-  const entry = { schema: CACHE_SCHEMA, fetchedAt: 1_000_000, resourceVersion: undefined, apps: [] };
+  const entry = { schema: CACHE_SCHEMA, fetchedAt: 1_000_000, apps: [] };
 
   it("treats a missing entry as stale", () => {
     const { deps } = memoryFs();
