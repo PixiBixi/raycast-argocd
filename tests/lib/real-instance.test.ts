@@ -13,24 +13,34 @@
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { deriveAppSets } from "../../src/lib/argocd/appset";
 import { projectSummary } from "../../src/lib/argocd/project";
 import type { AppSummary } from "../../src/lib/argocd/types";
 import { defaultOrder, rankApps } from "../../src/lib/search/score";
 
 const RAW = process.env.REAL_APPS_JSON;
 
-describe.runIf(RAW)("projection against a real instance", () => {
+/**
+ * Read lazily inside each test, never at collection time: describe.runIf still evaluates the
+ * suite body, so reading the file up here throws when the variable is unset, which is the
+ * normal case.
+ */
+function projectAll(): AppSummary[] {
   const list = JSON.parse(readFileSync(RAW as string, "utf8")) as { items: unknown[] };
+  return list.items
+    .map((item) => projectSummary(item, "i1"))
+    .filter((app): app is AppSummary => app !== undefined);
+}
 
-  function projectAll(): AppSummary[] {
-    return list.items
-      .map((item) => projectSummary(item, "i1"))
-      .filter((app): app is AppSummary => app !== undefined);
-  }
+function itemCount(): number {
+  return (JSON.parse(readFileSync(RAW as string, "utf8")) as { items: unknown[] }).items.length;
+}
 
+describe.runIf(RAW)("projection against a real instance", () => {
   it("projects every application without dropping one", () => {
-    const dropped = list.items.length - projectAll().length;
-    console.log(`items ${list.items.length}, dropped ${dropped}`);
+    const items = itemCount();
+    const dropped = items - projectAll().length;
+    console.log(`items ${items}, dropped ${dropped}`);
     expect(dropped).toBe(0);
   });
 
@@ -51,6 +61,16 @@ describe.runIf(RAW)("projection against a real instance", () => {
     expect(stats.emptyHaystack).toBe(0);
     expect(stats.unknownHealth).toBeLessThan(apps.length * 0.1);
     expect(stats.unknownSync).toBeLessThan(apps.length * 0.1);
+  });
+
+  it("reconstructs the ApplicationSets from the applications that carry an owner", () => {
+    const apps = projectAll();
+    const derived = deriveAppSets(apps);
+    console.log(`derived ${derived.length} ApplicationSets from ${apps.length} applications`);
+    // This is the fallback the ApplicationSets command relies on when the API returns an empty
+    // list, so it has to actually produce something on a real corpus.
+    expect(derived.length).toBeGreaterThan(0);
+    expect(derived.every((set) => set.haystack.length > 0)).toBe(true);
   });
 
   it("ranks and orders the real corpus fast enough to run on every keystroke", () => {
