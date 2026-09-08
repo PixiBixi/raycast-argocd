@@ -158,13 +158,39 @@ configuring a second machine silently breaks the first.
 
 ## The argocd CLI session
 
-Reads the token the `argocd` binary already holds in `~/.config/argocd/config` (mode 0600),
-matching the `users[]` entry whose name equals the instance host. Exact match, port included:
-`argocd.example.com` and `argocd.example.com:8443` are two different sessions.
+Reads what the `argocd` binary already holds in `~/.config/argocd/config` (mode 0600), matching
+the `users[]` entry whose name equals the instance host. Exact match, port included:
+`argocd.example.com` and `argocd.example.com:8443` are two different sessions, which is also
+what makes several instances work without any notion of a current context. The CLI's
+`current-context` is deliberately ignored.
+
+**It renews itself**, from the `refresh-token` that `argocd login --sso` stores next to the
+bearer. Reading only the bearer, which is what this mode did at first, meant an id token lapsed
+after roughly an hour and the operator was told to log in again, which made a perfectly good
+mode look like a degraded fallback.
+
+[`auth/cliSession.ts`](../../src/lib/auth/cliSession.ts) holds the precedence rule, and it is
+worth understanding because it needs no bookkeeping to stay correct:
+
+1. **A config token that is still good wins**, with no request at all. This is also how a fresh
+   `argocd login` takes effect immediately and makes any stale cache irrelevant, and it is the
+   branch that serves a non-expiring API token written into the config by hand, since such a
+   token has no readable expiry to renew against.
+2. **Otherwise a cached renewal that is still good wins**, so opening a command costs no round
+   trip.
+3. **Otherwise the config's refresh token mints a new one.**
+
+Nothing records which refresh token produced which renewal: re-running `argocd login` refreshes
+the config token, which rule 1 then prefers.
+
+What this deliberately does **not** do is write the renewed token back into the CLI's config.
+That file belongs to the CLI, and an extension quietly rewriting another tool's configuration is
+the kind of helpfulness nobody asks for. The renewal is kept under its own storage key, apart
+from the `sso` session, so switching an instance between the two modes cannot make one read the
+other's token.
 
 Expiry is detected by decoding the JWT `exp` claim. **Decode only, never verify**: the server
-is the authority; the local decode exists only to offer a re-login before a request that is
-certain to fail.
+is the authority; the local decode exists only to renew ahead of a request that would fail.
 
 A config that only lists `kubernetes` (left by `argocd --core`) or `localhost:8080` (a
 port-forward) has no session for the host itself, which is the usual shape when the CLI has only

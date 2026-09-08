@@ -57,7 +57,7 @@ Declared in [`package.json`](../package.json); each `name` maps to `src/<name>.t
 
 ```
 src/
-  lib/            pure TypeScript, no @raycast/api import, all 469 tests live here
+  lib/            pure TypeScript, no @raycast/api import, all 485 tests live here
     argocd/       REST client, streaming projector, probe, sync builder, ApplicationSets
     auth/         OIDC with silent renewal, secret storage, argocd CLI session, provider
     cache/        the on-disk projection cache

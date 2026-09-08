@@ -34,9 +34,17 @@ export function sessionKey(instanceId: string): string {
   return `${PREFIX}/${instanceId}/sso`;
 }
 
+/**
+ * The renewal derived from the argocd CLI's refresh token. Kept apart from the `sso` session so
+ * switching an instance between the two modes cannot make one read the other's token.
+ */
+export function cliSessionKey(instanceId: string): string {
+  return `${PREFIX}/${instanceId}/cli`;
+}
+
 /** True for a key this module owns, used when clearing everything for one instance. */
 export function isSecretKey(key: string, instanceId: string): boolean {
-  return key === tokenKey(instanceId) || key === sessionKey(instanceId);
+  return key === tokenKey(instanceId) || key === sessionKey(instanceId) || key === cliSessionKey(instanceId);
 }
 
 export class SecretError extends Error {
@@ -101,8 +109,21 @@ export async function clearSession(store: SecretStore, instanceId: string): Prom
   await store.clear(sessionKey(instanceId));
 }
 
+export async function readCliSessionRaw(store: SecretStore, instanceId: string): Promise<string | undefined> {
+  return store.read(cliSessionKey(instanceId));
+}
+
+export async function writeCliSessionRaw(store: SecretStore, instanceId: string, raw: string): Promise<void> {
+  await writeVerified(store, cliSessionKey(instanceId), raw);
+}
+
+export async function clearCliSession(store: SecretStore, instanceId: string): Promise<void> {
+  await store.clear(cliSessionKey(instanceId));
+}
+
 /** Everything an instance owns, for when it is removed. */
 export async function clearInstanceSecrets(store: SecretStore, instanceId: string): Promise<void> {
   await clearToken(store, instanceId);
   await clearSession(store, instanceId);
+  await clearCliSession(store, instanceId);
 }

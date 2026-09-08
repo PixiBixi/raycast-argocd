@@ -50,16 +50,25 @@ Stored in Raycast's local storage. Nothing leaves the Mac, and no hostname is co
 
 ## 🔐 Authentication
 
-Three modes, and they are not equivalent. Only one keeps your own identity and your own RBAC.
+Three modes, and they are not equivalent. Two keep your own identity and your own RBAC; the
+third does not.
 
-| Mode               | Identity                           | Renews itself     | Setup                                  |
-| ------------------ | ---------------------------------- | ----------------- | -------------------------------------- |
-| 🥇 Single sign-on  | **Yours**                          | **Yes**, silently | One browser login. Default.            |
-| argocd CLI session | The CLI session's                  | No                | `argocd login <host> --sso --grpc-web` |
-| ⚠️ API token       | The token's account, **not yours** | No                | **Set API token**                      |
+| Mode                  | Identity                           | Renews itself     | Setup                                                     |
+| --------------------- | ---------------------------------- | ----------------- | --------------------------------------------------------- |
+| 🥇 Single sign-on     | **Yours**                          | **Yes**, silently | One browser login, from the extension                     |
+| 🥇 argocd CLI session | **Yours**, via the CLI's session   | **Yes**, silently | `argocd login <host> --sso --grpc-web`, once per instance |
+| ⚠️ API token          | The token's account, **not yours** | No                | **Set API token**                                         |
+
+The first two are equally good and both need the loopback redirect URI registered on the OIDC
+client. Pick the CLI session to keep one credential store that the `argocd` CLI, this extension
+and any other ArgoCD tool all read; pick single sign-on to configure nothing outside Raycast.
+
+The CLI session mode reads the refresh token `argocd login --sso` stores alongside the bearer,
+so it renews itself too. A bearer with no readable expiry, such as an API token written into the
+config by hand, is left alone and never renewed.
 
 Read [`openwiki/domain/authentication.md`](openwiki/domain/authentication.md) before choosing
-anything but the first.
+the third.
 
 ### Single sign-on setup
 
@@ -216,7 +225,7 @@ the repository conventions: [`openwiki/development.md`](openwiki/development.md)
 |                                                                     |                                                                     |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | 🧭 [Quickstart](openwiki/quickstart.md)                             | What this is, the four constraints that shaped it, where to go next |
-| 🏗️ [Layering](openwiki/architecture/layering.md)                    | The `lib`/`ui` boundary and why 469 tests need no Raycast runtime   |
+| 🏗️ [Layering](openwiki/architecture/layering.md)                    | The `lib`/`ui` boundary and why 485 tests need no Raycast runtime   |
 | ⚡ [Read path](openwiki/architecture/read-path.md)                  | The 100 MB heap limit, streaming, the cache, capped rendering       |
 | 🧩 [Commands](openwiki/architecture/commands.md)                    | The four commands, their views, the three write guards              |
 | ⚠️ [What the ArgoCD API does not do](openwiki/domain/argocd-api.md) | Four things it appears to do and does not. Read this first.         |

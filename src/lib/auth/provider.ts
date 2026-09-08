@@ -31,6 +31,12 @@ export interface TokenProviderDeps {
   readStoredToken: (instanceId: string) => Promise<string | undefined>;
   /** Reads the stored SSO session, renewing it silently when it is close to lapsing. */
   readSsoToken?: (instance: ArgoInstance) => Promise<string>;
+  /**
+   * Reads the argocd CLI session, renewing it from the refresh token that `argocd login --sso`
+   * stored. Supplied in the Raycast context; without it the mode falls back to the bearer
+   * alone, which lapses with the identity provider's id token.
+   */
+  readCliSessionToken?: (instance: ArgoInstance) => Promise<string>;
   now: () => Date;
 }
 
@@ -61,6 +67,10 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
         );
       }
       return token;
+    }
+
+    if (deps.readCliSessionToken) {
+      return deps.readCliSessionToken(instance);
     }
 
     const session = await deps.readCliToken(host);

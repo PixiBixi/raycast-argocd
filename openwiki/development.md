@@ -6,7 +6,7 @@ Everything below has to pass before a commit. Nothing here is optional, and each
 catches something the other four do not.
 
 ```sh
-npm test                      # vitest over src/lib, 469 tests
+npm test                      # vitest over src/lib, 485 tests
 npm run typecheck             # tsc --noEmit
 npm run lint                  # ray lint: manifest, icons, eslint, prettier
 npm run build                 # ray build: bundles every command with esbuild

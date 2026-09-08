@@ -69,7 +69,7 @@ describe("decodeJwtExpiry", () => {
 });
 
 describe("isExpired", () => {
-  const at = (iso: string): CliToken => ({ token: "t", expiresAt: new Date(iso) });
+  const at = (iso: string): CliToken => ({ token: "t", expiresAt: new Date(iso), refreshToken: undefined });
 
   it("is true once the expiry has passed", () => {
     expect(isExpired(at("2026-09-08T10:00:00Z"), new Date("2026-09-08T10:00:01Z"))).toBe(true);
@@ -84,7 +84,7 @@ describe("isExpired", () => {
   });
 
   it("is false for an opaque token with no local expiry, letting the server decide", () => {
-    expect(isExpired({ token: "t", expiresAt: undefined }, new Date())).toBe(false);
+    expect(isExpired({ token: "t", expiresAt: undefined, refreshToken: undefined }, new Date())).toBe(false);
   });
 
   it("honours an explicit skew", () => {

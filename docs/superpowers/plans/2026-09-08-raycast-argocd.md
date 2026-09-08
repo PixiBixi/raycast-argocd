@@ -1565,3 +1565,35 @@ configuring a credential inside Raycast at all.
 
 The redirect URI has been requested from the identity provider's owners. `sso` is the mode this
 was all built for, and the documentation now says so rather than presenting three equals.
+
+### A14: the CLI session mode renews itself
+
+Raised as a question, not a bug: if `argocd login --sso` is going to work once the redirect URI
+lands, does the extension still need anything of its own? Checking the code answered it, and the
+answer was no but for the wrong reason: `cliConfig.ts` read only `auth-token` and ignored the
+`refresh-token` stored beside it, so the mode would have told the operator "the argocd CLI
+session has expired, log in again" every hour. That worked indefinitely with a non-expiring
+account token, which is why it had never shown.
+
+So the mode now renews. `lib/auth/cliSession.ts` reuses `refreshTokens` and the session model
+the `sso` mode already had, with a three-rule precedence that needs no bookkeeping to stay
+correct:
+
+1. a config token that is still good wins, with no request at all, which is also how a fresh
+   `argocd login` takes effect at once and how a hand-written non-expiring token keeps working;
+2. otherwise a still-good cached renewal wins, so a command open costs no round trip;
+3. otherwise the config's refresh token mints a new one.
+
+Re-running `argocd login` refreshes the config token, which rule 1 prefers, so nothing has to
+record which refresh token produced which renewal.
+
+Two deliberate restraints. The renewal is **not** written back into `~/.config/argocd/config`:
+that file belongs to the CLI, and an extension rewriting another tool's configuration is
+unasked-for helpfulness. And it is kept under its own storage key, apart from the `sso` session,
+so switching an instance between the two modes cannot make one read the other's token, which a
+test asserts.
+
+The result is what the operator was asking for from the start: one `argocd login --sso` per
+instance, one credential store that the CLI, this extension and any other ArgoCD tool all read,
+and nothing ever pasted into Raycast. `sso` and `cli` are now documented as equals that differ
+only in where the credential lives, rather than a design and a fallback.

@@ -17,13 +17,17 @@ import { probeInstance, type Reachability } from "../lib/argocd/probe";
 import { ProjectionCache } from "../lib/cache/store";
 import { readCliToken } from "../lib/auth/cliConfig";
 import {
+  clearCliSession,
   clearInstanceSecrets,
   clearSession,
+  readCliSessionRaw,
   readSessionRaw,
   readToken,
+  writeCliSessionRaw,
   writeSessionRaw,
   writeToken,
 } from "../lib/auth/secrets";
+import { createCliTokenReader } from "../lib/auth/cliSession";
 import { createTokenProvider } from "../lib/auth/provider";
 import { runSsoLogin } from "../lib/auth/login";
 import type { ArgoInstance } from "../lib/config/instances";
@@ -60,21 +64,46 @@ export function clearSecrets(instanceId: string): Promise<void> {
   return clearInstanceSecrets(secretStore, instanceId);
 }
 
+/** Shared by both OIDC-backed modes: neither hardcodes anything about the provider. */
+const providerDeps = {
+  readSettings: (instance: ArgoInstance) => fetchOidcSettings(instance.baseUrl, { fetch: globalThis.fetch }),
+  discover: (issuer: string) => discover(issuer, { fetch: globalThis.fetch }),
+  refresh: (
+    endpoints: Parameters<typeof refreshTokens>[0]["endpoints"],
+    clientId: string,
+    refreshToken: string,
+    scopes: string[],
+  ) =>
+    refreshTokens({ endpoints, clientId, refreshToken, scopes }, { fetch: globalThis.fetch, now: Date.now }),
+  now: () => Date.now(),
+};
+
+/**
+ * The argocd CLI session, renewed from the refresh token that `argocd login --sso` stored. The
+ * renewal is kept in this extension's storage rather than written back into the CLI's config,
+ * which belongs to the CLI.
+ */
+const readCliSessionToken = createCliTokenReader({
+  readCliToken: (host) => readCliToken(host),
+  readCachedSession: async (instanceId) => parseSession(await readCliSessionRaw(secretStore, instanceId)),
+  writeCachedSession: (instanceId, session) =>
+    writeCliSessionRaw(secretStore, instanceId, serializeSession(session)),
+  clearCachedSession: (instanceId) => clearCliSession(secretStore, instanceId),
+  ...providerDeps,
+});
+
 const readSsoToken = createSsoTokenReader({
   readSession: readSsoSession,
   writeSession: writeSsoSession,
   clearSession: clearSsoSession,
-  readSettings: (instance) => fetchOidcSettings(instance.baseUrl, { fetch: globalThis.fetch }),
-  discover: (issuer) => discover(issuer, { fetch: globalThis.fetch }),
-  refresh: (endpoints, clientId, refreshToken, scopes) =>
-    refreshTokens({ endpoints, clientId, refreshToken, scopes }, { fetch: globalThis.fetch, now: Date.now }),
-  now: () => Date.now(),
+  ...providerDeps,
 });
 
 export const getToken = createTokenProvider({
   readCliToken: (host) => readCliToken(host),
   readStoredToken: readApiToken,
   readSsoToken,
+  readCliSessionToken,
   now: () => new Date(),
 });
 

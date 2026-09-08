@@ -37,7 +37,7 @@ describe("ssoLoginArgs", () => {
 
 describe("runSsoLogin", () => {
   it("resolves once a fresh token appears and spawns the CLI exactly once", async () => {
-    const token: CliToken = { token: "fresh", expiresAt: undefined };
+    const token: CliToken = { token: "fresh", expiresAt: undefined, refreshToken: undefined };
     let calls = 0;
     const readToken = vi.fn(async () => (++calls >= 3 ? token : undefined));
     const d = deps({ readToken });
@@ -50,8 +50,8 @@ describe("runSsoLogin", () => {
 
   it("keeps polling while the stored token is still the expired one", async () => {
     const clock = fakeClock(1_000_000);
-    const stale: CliToken = { token: "stale", expiresAt: new Date(clock.now() - 60_000) };
-    const fresh: CliToken = { token: "fresh", expiresAt: new Date(clock.now() + 3_600_000) };
+    const stale: CliToken = { token: "stale", expiresAt: new Date(clock.now() - 60_000), refreshToken: undefined };
+    const fresh: CliToken = { token: "fresh", expiresAt: new Date(clock.now() + 3_600_000), refreshToken: undefined };
     let calls = 0;
     const readToken = vi.fn(async () => (++calls >= 4 ? fresh : stale));
 

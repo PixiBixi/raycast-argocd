@@ -13,18 +13,19 @@ src/ui/    React, Raycast, and the only place the outside world is touched.
 [`tests/lib/boundaries.test.ts`](../../tests/lib/boundaries.test.ts) walks the tree and fails
 if it does.
 
-That is not tidiness. It is the reason 469 tests run in under a second with no Raycast runtime,
+That is not tidiness. It is the reason 485 tests run in under a second with no Raycast runtime,
 no network, no storage and no clock. Every decision worth testing lives in `lib`, and
 everything in `lib` takes its dependencies as parameters:
 
-| Module                                               | What is injected                                                |
-| ---------------------------------------------------- | --------------------------------------------------------------- |
-| [`argocd/client.ts`](../../src/lib/argocd/client.ts) | `fetch`, the token provider, a timeout                          |
-| [`argocd/probe.ts`](../../src/lib/argocd/probe.ts)   | `fetch`, a clock, a timeout                                     |
-| [`auth/secrets.ts`](../../src/lib/auth/secrets.ts)   | a `SecretStore`                                                 |
-| [`auth/oidc.ts`](../../src/lib/auth/oidc.ts)         | `fetch`, randomness, a SHA-256                                  |
-| [`auth/sso.ts`](../../src/lib/auth/sso.ts)           | session read/write/clear, settings, discovery, refresh, a clock |
-| [`cache/store.ts`](../../src/lib/cache/store.ts)     | `readFile`, `writeFile`, `rename`, `mkdir`, a clock             |
+| Module                                                   | What is injected                                                              |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| [`argocd/client.ts`](../../src/lib/argocd/client.ts)     | `fetch`, the token provider, a timeout                                        |
+| [`argocd/probe.ts`](../../src/lib/argocd/probe.ts)       | `fetch`, a clock, a timeout                                                   |
+| [`auth/secrets.ts`](../../src/lib/auth/secrets.ts)       | a `SecretStore`                                                               |
+| [`auth/oidc.ts`](../../src/lib/auth/oidc.ts)             | `fetch`, randomness, a SHA-256                                                |
+| [`auth/sso.ts`](../../src/lib/auth/sso.ts)               | session read/write/clear, settings, discovery, refresh, a clock               |
+| [`auth/cliSession.ts`](../../src/lib/auth/cliSession.ts) | the CLI config reader, a renewal cache, settings, discovery, refresh, a clock |
+| [`cache/store.ts`](../../src/lib/cache/store.ts)         | `readFile`, `writeFile`, `rename`, `mkdir`, a clock                           |
 
 The production values for all of them are assembled in exactly one file:
 [`src/ui/deps.ts`](../../src/ui/deps.ts). If you are looking for where this extension talks to

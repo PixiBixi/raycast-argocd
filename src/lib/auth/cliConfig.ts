@@ -18,6 +18,12 @@ import { parse as parseYaml } from "yaml";
 export interface CliToken {
   token: string;
   expiresAt: Date | undefined;
+  /**
+   * The refresh token `argocd login --sso` stores next to the bearer. Reading it is what lets
+   * the session be renewed without asking anyone: without it, an OIDC id token lapses after an
+   * hour and the mode is only usable with a non-expiring account token.
+   */
+  refreshToken: string | undefined;
 }
 
 export interface CliConfigReaderDeps {
@@ -106,7 +112,12 @@ export function extractToken(configYaml: string, host: string): CliToken | undef
     if (typeof token !== "string" || token.length === 0) {
       return undefined;
     }
-    return { token, expiresAt: decodeJwtExpiry(token) };
+    const refresh = record["refresh-token"];
+    return {
+      token,
+      expiresAt: decodeJwtExpiry(token),
+      refreshToken: typeof refresh === "string" && refresh.length > 0 ? refresh : undefined,
+    };
   }
 
   return undefined;

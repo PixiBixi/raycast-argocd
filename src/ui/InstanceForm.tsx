@@ -107,10 +107,10 @@ export function InstanceForm({ instances, editing, onSaved }: Props) {
         title="Authentication"
         value={authMode}
         onChange={(value) => setAuthMode(value as AuthMode)}
-        info="Single sign-on logs in once in a browser and renews itself from the refresh token, so nothing is ever asked again. It needs a public OIDC client, which ArgoCD takes from oidc.cliClientID, and that client must register the loopback redirect. The other two modes exist where it does not. See the README."
+        info="Single sign-on logs in once from here and renews itself. The CLI session reuses what argocd login --sso already stored and renews that too, so one login serves the CLI, this extension and any other ArgoCD tool. Both need the identity provider to register the loopback redirect. The API token needs nothing but carries a service account's identity rather than yours. See the README."
       >
         <Form.Dropdown.Item value="sso" title="Single sign-on, renewed silently" icon={Icon.Fingerprint} />
-        <Form.Dropdown.Item value="cli" title="argocd CLI session" icon={Icon.Terminal} />
+        <Form.Dropdown.Item value="cli" title="argocd CLI session, renewed silently" icon={Icon.Terminal} />
         <Form.Dropdown.Item value="token" title="API token" icon={Icon.Key} />
       </Form.Dropdown>
       {authMode === "sso" ? (
