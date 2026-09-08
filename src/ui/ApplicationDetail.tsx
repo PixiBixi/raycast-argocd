@@ -13,6 +13,7 @@ import {
 } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
 import { useEffect } from "react";
+import { AuthError } from "../lib/auth/provider";
 import { healthSeverity, syncSeverity } from "../lib/model/status";
 import { orderResources, resourceNeedsAttention } from "../lib/argocd/project";
 import type { AppDetail, AppSummary, ResourceStatus, RevisionMetadata } from "../lib/argocd/types";
@@ -70,8 +71,22 @@ function markdown(
   app: AppSummary,
   detail: AppDetail | undefined,
   revision: RevisionMetadata | undefined,
+  error: Error | undefined,
 ): string {
   const lines = [`# ${app.name}`];
+
+  if (error) {
+    // The row the operator came from is still rendered underneath, from the cached summary, so
+    // the view degrades to what is known rather than to a stack trace.
+    lines.push(
+      "",
+      `> **Could not load this application.** ${error.message}`,
+      "",
+      error instanceof AuthError
+        ? "Everything below is the last cached state of the row you came from."
+        : "Everything below is the last cached state. Refresh to try again.",
+    );
+  }
 
   if (detail?.operationMessage) {
     lines.push("", `> ${detail.operationMessage}`);
@@ -159,11 +174,14 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
   const {
     data: detail,
     isLoading,
+    error,
     revalidate,
   } = useCachedPromise(
     (name: string, namespace: string) => makeClient(instance).getApplication(name, namespace),
     [app.name, app.namespace],
-    { keepPreviousData: true },
+    // The error is taken and rendered rather than left to surface as a stack trace, which is
+    // what an expired session used to produce here while every list view reported it properly.
+    { keepPreviousData: true, failureToastOptions: { title: `Could not load ${app.name}` } },
   );
 
   const current = detail ?? app;
@@ -230,7 +248,7 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
     <Detail
       isLoading={isLoading}
       navigationTitle={`${app.name} on ${instance.name}`}
-      markdown={markdown(app, detail, revisionMetadata)}
+      markdown={markdown(app, detail, revisionMetadata, error)}
       metadata={
         <Detail.Metadata>
           <Detail.Metadata.TagList title="Instance">
@@ -325,6 +343,17 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
       actions={
         <ActionPanel>
           <ActionPanel.Section>
+            {error instanceof AuthError ? (
+              <Action.Open
+                title={
+                  instance.authMode === "token"
+                    ? `Set the API Token for ${instance.name}`
+                    : `Sign in to ${instance.name}`
+                }
+                icon={instance.authMode === "token" ? Icon.Key : Icon.Fingerprint}
+                target="raycast://extensions/pixibixi/argocd/manage-instances"
+              />
+            ) : null}
             <Action.OpenInBrowser title="Open in ArgoCD" url={url} />
             {detail && detail.resourceCounts.total > 0 ? (
               <Action

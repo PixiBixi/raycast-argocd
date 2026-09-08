@@ -45,6 +45,11 @@ The metadata panel carries the **sync policy** as tags (`automated`, `prune`, `s
 `manual`) next to the sync status rather than buried, because whether auto-sync is on changes
 what a manual sync means.
 
+A failed load is rendered, not thrown. The view keeps the cached row it was opened from,
+prefixes the markdown with what went wrong, and offers the recovery that matches the instance's
+auth mode. Before that, an expired session here produced a stack trace while every list view
+reported the same failure properly.
+
 Two views push off it:
 
 - [`ResourcesList`](../../src/ui/ResourcesList.tsx): the full inventory, attention first, with
