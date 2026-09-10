@@ -156,6 +156,34 @@ for entry in "${KEEP[@]}"; do
   cp -R "$entry" "$OUT/"
 done
 
+# The shipped manifest must not advertise scripts whose files were left behind. check:secrets,
+# store:payload and demo all live in scripts/, which is deliberately not in KEEP, so in the
+# monorepo they were three commands that fail the moment anyone runs them. Computed rather than
+# listed: any script referencing a path absent from the payload is dropped, so adding a fourth
+# repository-only script cannot reintroduce this.
+node --input-type=module -e '
+  import { readFileSync, writeFileSync, existsSync } from "node:fs";
+  import { join } from "node:path";
+  const out = process.argv[1];
+  const manifest = join(out, "package.json");
+  const parsed = JSON.parse(readFileSync(manifest, "utf8"));
+  const dropped = [];
+  for (const [name, body] of Object.entries(parsed.scripts ?? {})) {
+    // Every path-looking token in the command line, checked against what was copied.
+    const missing = (String(body).match(/(?:\.\/)?[\w.-]+\/[\w./-]+/g) ?? []).filter(
+      (ref) => !existsSync(join(out, ref.replace(/^\.\//, ""))),
+    );
+    if (missing.length > 0) {
+      delete parsed.scripts[name];
+      dropped.push(`${name} (${missing.join(", ")})`);
+    }
+  }
+  if (dropped.length > 0) {
+    writeFileSync(manifest, JSON.stringify(parsed, null, 2) + "\n");
+    console.log(`  dropped from the shipped scripts: ${dropped.join(", ")}`);
+  }
+' "$OUT"
+
 printf 'Payload for raycast/extensions/extensions/%s written to %s:\n' \
   "$(node -p 'require("./package.json").name')" "$OUT"
 (cd "$OUT" && find . -type f | sed 's|^\./||' | sort | sed 's/^/  /')

@@ -176,11 +176,7 @@ git commit -S -m "feat(model): ArgoCD health, sync and operation status vocabula
   }
   export function normalizeBaseUrl(raw: string): string;
   export function instanceHost(instance: Pick<ArgoInstance, "baseUrl">): string;
-  export function validateInstance(
-    draft: InstanceDraft,
-    existing: ArgoInstance[],
-    newId: () => string,
-  ): ArgoInstance;
+  export function validateInstance(draft: InstanceDraft, existing: ArgoInstance[], newId: () => string): ArgoInstance;
   export function upsertInstance(instances: ArgoInstance[], instance: ArgoInstance): ArgoInstance[];
   export function removeInstance(instances: ArgoInstance[], id: string): ArgoInstance[];
   export function parseInstances(raw: string | undefined): ArgoInstance[];

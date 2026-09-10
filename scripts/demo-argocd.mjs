@@ -112,9 +112,7 @@ for (const service of SERVICES) {
         metadata: {
           name,
           namespace: "argocd",
-          ownerReferences: [
-            { apiVersion: "argoproj.io/v1alpha1", kind: "ApplicationSet", name: appSet.name },
-          ],
+          ownerReferences: [{ apiVersion: "argoproj.io/v1alpha1", kind: "ApplicationSet", name: appSet.name }],
         },
         spec: {
           project,
