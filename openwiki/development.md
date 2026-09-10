@@ -277,23 +277,25 @@ that were already filtered, so a recent key for an instance that is not loaded c
 The instances are excluded with the **Exclude from Searches** action in Manage Instances, one
 action each and no form, which sets `enabled: false`. They show as `excluded` afterwards.
 
-The two caches are emptied by the clean room:
+The two caches are emptied by `./scripts/screenshot-prep.sh`, which deletes them from the
+support path and reads back that they are gone. Nothing has to be restored: both are rebuilt
+from the API on the next load.
 
-```sh
-./scripts/screenshot-clean-room.sh enter   # capture, then
-./scripts/screenshot-clean-room.sh leave
-```
+That script replaced one that renamed the extension in `package.json`, on the theory that
+Raycast keys LocalStorage off the extension `name`, so a throwaway name would hand over an
+empty instance list. It does not. The **support path** is keyed by the name, LocalStorage is
+not, and the second was assumed from the first without being checked. Raycast's storage is an
+encrypted database, so the keying cannot be read off disk to settle it; what settled it was the
+real instances still being listed afterwards.
 
-A throwaway `name` gives a fresh support path, so the projection cache starts empty rather than
-painting 3.5 MB of real application names before the first refresh. `leave` is a clean git
-revert, which is why `enter` refuses to run on a dirty tree, and `store:payload` refuses to
-build under the throwaway name.
+The rename bought only what the new script does directly, and it cost two things:
 
-It does **not** reset LocalStorage. An earlier version of this page said it did, on the grounds
-that the support path is `extensions/<name>/`: the support path is, the instance list is not,
-and the second was assumed from the first. Raycast's storage is an encrypted database, so its
-keying cannot be read off disk to settle it either way. What settles it is that the real
-instances are still listed after entering the clean room.
+- Raycast registered the renamed extension as a **second extension**. Both carry
+  `title: "ArgoCD"`, so the root search listed every command twice with nothing to tell them
+  apart, and the stale one has to be removed by hand in Raycast's settings. `ray` has no
+  command to unregister an extension.
+- `package.json` churn, which then needed a guard so the throwaway name could not be
+  published. That guard is kept: it is cheap, and a manual rename would still be caught.
 
 **Manage Instances cannot be made safe.** It lists every instance with its host and its
 reachability, excluded ones included, and no flag filters that view. Do not capture it. The

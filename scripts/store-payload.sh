@@ -103,10 +103,11 @@ node --input-type=module -e '
     console.error("::error::an extension is not versioned; remove the version field");
     process.exit(1);
   }
-  // The screenshot clean room renames the extension to get an empty LocalStorage. Publishing
-  // under that name would ship the wrong extension id and orphan every users installed copy.
+  // Publishing under any other name would ship the wrong extension id. Nothing renames the
+  // extension any more, but a rename is exactly the sort of edit that gets left behind: an
+  // earlier screenshot script did it deliberately and cost a duplicate Raycast registration.
   if (p.name !== "argocd") {
-    console.error(`::error::name is "${p.name}", not "argocd"; run ./scripts/screenshot-clean-room.sh leave`);
+    console.error(`::error::name is "${p.name}", not "argocd"; restore it before publishing`);
     process.exit(1);
   }
 ' || fail=1
