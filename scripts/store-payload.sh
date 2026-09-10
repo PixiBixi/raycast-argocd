@@ -47,9 +47,24 @@ if [ ! -d metadata ]; then
 else
   shots=$(find metadata -maxdepth 1 -name '*.png' | sort)
   count=$(printf '%s\n' "$shots" | grep -c . || true)
-  if [ "$count" -lt 3 ] || [ "$count" -gt 6 ]; then
-    refuse "metadata/ holds $count PNG screenshots; the store wants between 3 and 6."
+  # The validator in @raycast/api checks dimensions only: it iterates metadata/, validates
+  # every .png and ignores everything else, with no rule on how many or how they are named.
+  # Three is the documented floor and worth refusing. Six is the documented ceiling but not
+  # enforced anywhere -- linear ships seven -- so going over it is a warning, not a refusal.
+  if [ "$count" -lt 3 ]; then
+    refuse "metadata/ holds $count PNG screenshots; the store asks for at least 3."
+  elif [ "$count" -gt 6 ]; then
+    printf '::warning::metadata/ holds %s screenshots; the checklist asks for 3 to 6.\n' "$count" >&2
   fi
+  # Published extensions all name them <extension>-<n>.png, 1-indexed, and the store shows
+  # them in filename order. Nothing enforces it, so this is a warning too.
+  while IFS= read -r shot; do
+    [ -n "$shot" ] || continue
+    case "$(basename "$shot")" in
+      argocd-[1-9].png | argocd-[1-9][0-9].png) ;;
+      *) printf '::warning::%s does not follow the argocd-<n>.png convention; the store orders screenshots by filename.\n' "$shot" >&2 ;;
+    esac
+  done <<< "$shots"
   while IFS= read -r shot; do
     [ -n "$shot" ] || continue
     size=$(python3 - "$shot" <<'PY'

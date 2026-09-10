@@ -208,12 +208,29 @@ payload rather than reporting a problem and continuing.
 
 Two of those need a person at a keyboard, so they are the real remainder.
 
-**Screenshots.** The validator wants PNGs of exactly 2000x1250 in a top-level `metadata/`
-folder, taken on a retina screen, and it says so in those words. It also **skips the check
-entirely when the folder does not exist**, which is why `npm run lint` passes today and says
-nothing about them. That is the same shape as every other bug in this repository's history: a
-check that is named more broadly than what it verifies. Do not read a green `ray lint` as
-evidence that the metadata is in order; `npm run store:payload` is what refuses.
+**Screenshots.** They go in a top-level `metadata/` folder, named `argocd-1.png` through
+`argocd-5.png`.
+
+What the validator in `@raycast/api` actually does: it reads `metadata/` non-recursively,
+validates every entry ending in `.png` and **ignores everything else**. A PNG must carry real
+PNG magic bytes, a readable `IHDR`, and dimensions of exactly 2000x1250, or it says so and
+names the retina screen. The extension icon is checked separately, at 512x512, in `assets/`.
+
+Nothing else is enforced. There is no rule on how many screenshots there are and none on how
+they are named, so both of those are convention:
+
+- **Naming.** Every published extension uses `<extension>-<n>.png`, 1-indexed: `brew-1.png`,
+  `linear-1.png`, `jira-beta-1.png`. The store shows them in filename order, which is the only
+  reason the numbering matters.
+- **Count.** The checklist asks for three to six. Three is worth refusing below. Six is not
+  enforced anywhere and `linear` ships seven, so `store:payload` warns above it rather than
+  refusing.
+
+The validator also **skips the whole check when `metadata/` does not exist**, which is why
+`npm run lint` passes today and says nothing about screenshots. That is the same shape as
+every other bug in this repository's history: a check named more broadly than what it
+verifies. Do not read a green `ray lint` as evidence that the metadata is in order;
+`npm run store:payload` is what refuses.
 
 Screenshots also cannot be produced from a terminal, and they must not come from a real
 instance: an application list is a list of internal service names, and the listing page is
