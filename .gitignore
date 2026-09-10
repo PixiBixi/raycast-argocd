@@ -10,3 +10,6 @@ raycast-env.d.ts
 
 # Local deny-list for the leak gate, machine-specific by design
 .check-no-secrets-denylist
+
+# Screenshots taken but not shipped
+.screenshots-unused/
