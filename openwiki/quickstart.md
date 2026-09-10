@@ -33,8 +33,11 @@ npm install
 npm run dev
 ```
 
-The four commands appear at the top of Raycast's root search. `Ctrl-C` stops the dev server and
-leaves the extension installed.
+The four commands appear at the top of Raycast's root search, and they need `npm run dev` to
+stay running: `ray develop` holds the compiled commands in memory rather than writing a bundle
+to disk, so after `Ctrl-C` the commands are still listed but opening one reports "Missing
+executable. You might need to build the extension." `npm run build` does not help, it compiles
+and keeps nothing.
 
 Then add an instance from **Manage Instances**. Instances are user data held in Raycast's
 `LocalStorage`, not build-time configuration: a Raycast preference cannot hold a variable

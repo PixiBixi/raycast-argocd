@@ -29,9 +29,13 @@ npm install
 npm run dev
 ```
 
-The four commands appear at the top of Raycast's root search. `Ctrl-C` stops the dev server and
-leaves the extension installed, so you can use it without keeping the terminal open. Reopen a
-command to pick up a code change.
+The four commands appear at the top of Raycast's root search. Reopen a command to pick up a
+code change.
+
+Keep `npm run dev` running. `ray develop` holds the compiled commands in memory and Raycast
+fetches them from it, so stopping the dev server leaves the commands listed but not runnable:
+opening one then reports **"Missing executable. You might need to build the extension."**
+`npm run build` does not fix that, it compiles and keeps nothing. Start `npm run dev` again.
 
 ## ⚙️ Adding an instance
 
