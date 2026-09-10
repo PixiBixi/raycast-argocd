@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { projectDetail, projectResourceDiff, projectSummary } from "../../src/lib/argocd/project";
-import { deriveAppSets, rollupAppSet } from "../../src/lib/argocd/appset";
+import { deriveAppSets, mergeAppSets, projectAppSet, rollupAppSet } from "../../src/lib/argocd/appset";
 
 /**
  * Checks that the corpus served by scripts/demo-argocd.mjs still projects to fully painted rows.
@@ -52,6 +52,35 @@ when("the demo corpus projects to fully painted rows", () => {
     // A screenshot of one uniform status shows nothing about the extension.
     expect(new Set(ok.map((row) => row.health)).size).toBeGreaterThan(2);
     expect(new Set(ok.map((row) => row.sync))).toContain("OutOfSync");
+  });
+
+  it("counts generated applications on the path the view actually takes", async () => {
+    // The earlier test only covered deriveAppSets. The ApplicationSets command renders
+    // mergeAppSets(projectAppSet(from the API), derived), and a mismatch between the two
+    // identities would show every rollup as "0 apps" while this file stayed green.
+    const list = (await get("/api/v1/applications")) as { items: unknown[] };
+    const rows = list.items
+      .map((app) => projectSummary(app, "demo"))
+      .filter((row): row is NonNullable<typeof row> => row !== undefined);
+
+    const raw = (await get("/api/v1/applicationsets")) as { items: unknown[] };
+    const fromApi = raw.items
+      .map((item) => projectAppSet(item, "demo"))
+      .filter((set): set is NonNullable<typeof set> => set !== undefined);
+    expect(fromApi.length).toBeGreaterThan(0);
+
+    const merged = mergeAppSets(fromApi, deriveAppSets(rows));
+    expect(merged.length).toBe(fromApi.length);
+
+    for (const appSet of merged) {
+      const rollup = rollupAppSet(rows, appSet);
+      expect({ name: appSet.name, total: rollup.total > 0 }).toEqual({
+        name: appSet.name,
+        total: true,
+      });
+    }
+    expect(merged.some((set) => rollupAppSet(rows, set).outOfSync > 0)).toBe(true);
+    expect(merged.some((set) => rollupAppSet(rows, set).degraded > 0)).toBe(true);
   });
 
   it("recovers every ApplicationSet from ownerReferences", async () => {
