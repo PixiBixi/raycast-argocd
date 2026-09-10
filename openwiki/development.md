@@ -238,6 +238,47 @@ Cleartext on loopback is what makes this work, and `normalizeBaseUrl` exempts ex
 `notlocalhost` are both still refused, with tests for each. The exemption is not only for
 screenshots, it is also how a port-forwarded ArgoCD is reached.
 
+### The demo server is necessary but not sufficient
+
+Pointing at a fake instance keeps real application names out of the data. It does not empty
+the screen, because the real instances stay configured and the extension renders their names.
+The full surface, checked against the code rather than guessed:
+
+- **Instance name on every row**, as a coloured tag (`ApplicationListItem.tsx:28`)
+- **Instance name as a section header** and in navigation titles (`ApplicationListView.tsx:160`)
+- **Every instance in the scope dropdown** (`search-applications.tsx:123`)
+- **Host names in the login actions** (`ApplicationListView.tsx:139`)
+- **Manage Instances**, which lists every instance with its host and reachability, by design
+- **The projection cache on disk**, which paints before any refresh and holds real names
+- **Raycast's own `useCachedPromise` cache**, which can repaint a real detail view
+
+Two of those cannot be filtered. `enabled` handles the rest: `search-applications.tsx:35` and
+`monitor.tsx:74` both filter on it, so disabling an instance removes it from the rows, the
+headers and the dropdown. Recents need no handling: `defaultOrder` only reorders applications
+that were already filtered, so a recent key for an instance that is not loaded cannot surface.
+
+Manage Instances and the two caches need an empty profile, which is what the clean room is:
+
+```sh
+./scripts/screenshot-clean-room.sh enter   # capture, then
+./scripts/screenshot-clean-room.sh leave
+```
+
+Raycast derives both LocalStorage and the support path from the extension's `name`, so a
+throwaway name hands the extension an empty instance list, an empty projection cache and empty
+recents, while the real configuration sits untouched under the real name and comes back with
+it. Nothing is deleted and no token is re-entered. `leave` is a clean git revert, which is why
+`enter` refuses to run on a dirty tree.
+
+Name the demo instance something neutral when you add it. That name is the string that ends up
+on every row and in every section header, so it is the one piece of text in the screenshots
+that you choose by hand.
+
+Do not blur or redact a screenshot of a real instance instead. Raycast's checklist asks for
+consistent, legible screenshots, a redacted one reads as broken, and a blur is a claim about
+pixels that nobody verifies. An empty profile is verifiable: either the demo instance is the
+only one listed or it is not.
+
 `tests/lib/demoCorpus.test.ts` keeps the corpus honest. It projects the served data through
 the real `projectSummary`, `projectDetail` and `projectResourceDiff` and asserts that nothing
 is dropped, that no summary field is empty, that every ApplicationSet is recovered from
