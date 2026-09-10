@@ -9,10 +9,21 @@
 # navigation titles. Manage Instances shows every instance with its host, by design, and no
 # flag filters that view.
 #
-# Raycast derives both LocalStorage and the support path from the extension's `name`, so a
-# throwaway name yields an empty instance list, an empty projection cache and empty recents,
-# while the real configuration sits untouched under the real name and comes back with it.
-# Nothing is deleted and no token is re-entered.
+# What a throwaway `name` does and does not do, measured rather than assumed:
+#
+#   it DOES give a fresh support path, so the projection cache starts empty
+#     (extensions/<name>/cache, 3.5 MB of real application names in the real one)
+#   it does NOT reset LocalStorage, so the configured instances carry over
+#
+# The first claim came from observing extensions/argocd/ on disk. The second was assumed from
+# it and is wrong: the instance list survives the rename. Raycast's storage is an encrypted
+# database, so how it keys rows cannot be read from disk to settle it either way -- what
+# settles it is that the real instances are still listed after entering.
+#
+# So this handles the caches only. The instances need the "Exclude from Searches" action in
+# Manage Instances, which sets `enabled: false`; search-applications.tsx:35 and monitor.tsx:74
+# both filter on it. Manage Instances itself always lists every instance with its host, and
+# nothing can filter that view.
 #
 #   ./scripts/screenshot-clean-room.sh enter    # then npm run demo, npm run dev, capture
 #   ./scripts/screenshot-clean-room.sh leave    # restores the real name

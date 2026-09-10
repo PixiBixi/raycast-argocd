@@ -257,18 +257,33 @@ Two of those cannot be filtered. `enabled` handles the rest: `search-application
 headers and the dropdown. Recents need no handling: `defaultOrder` only reorders applications
 that were already filtered, so a recent key for an instance that is not loaded cannot surface.
 
-Manage Instances and the two caches need an empty profile, which is what the clean room is:
+The instances are excluded with the **Exclude from Searches** action in Manage Instances, one
+action each and no form, which sets `enabled: false`. They show as `excluded` afterwards.
+
+The two caches are emptied by the clean room:
 
 ```sh
 ./scripts/screenshot-clean-room.sh enter   # capture, then
 ./scripts/screenshot-clean-room.sh leave
 ```
 
-Raycast derives both LocalStorage and the support path from the extension's `name`, so a
-throwaway name hands the extension an empty instance list, an empty projection cache and empty
-recents, while the real configuration sits untouched under the real name and comes back with
-it. Nothing is deleted and no token is re-entered. `leave` is a clean git revert, which is why
-`enter` refuses to run on a dirty tree.
+A throwaway `name` gives a fresh support path, so the projection cache starts empty rather than
+painting 3.5 MB of real application names before the first refresh. `leave` is a clean git
+revert, which is why `enter` refuses to run on a dirty tree, and `store:payload` refuses to
+build under the throwaway name.
+
+It does **not** reset LocalStorage. An earlier version of this page said it did, on the grounds
+that the support path is `extensions/<name>/`: the support path is, the instance list is not,
+and the second was assumed from the first. Raycast's storage is an encrypted database, so its
+keying cannot be read off disk to settle it either way. What settles it is that the real
+instances are still listed after entering the clean room.
+
+**Manage Instances cannot be made safe.** It lists every instance with its host and its
+reachability, excluded ones included, and no flag filters that view. Do not capture it. The
+other three commands give more than the three to six screenshots the store wants: the
+application list, the ApplicationSets rollup, a detail view, the diff and the sync form.
+Capturing it would need the instance list actually emptied, which only an export and re-import
+of the configuration would make safe, and that does not exist yet.
 
 Name the demo instance something neutral when you add it. That name is the string that ends up
 on every row and in every section header, so it is the one piece of text in the screenshots
