@@ -88,6 +88,12 @@ node --input-type=module -e '
     console.error("::error::an extension is not versioned; remove the version field");
     process.exit(1);
   }
+  // The screenshot clean room renames the extension to get an empty LocalStorage. Publishing
+  // under that name would ship the wrong extension id and orphan every users installed copy.
+  if (p.name !== "argocd") {
+    console.error(`::error::name is "${p.name}", not "argocd"; run ./scripts/screenshot-clean-room.sh leave`);
+    process.exit(1);
+  }
 ' || fail=1
 
 # 3. The first CHANGELOG heading carries the merge-date placeholder Raycast substitutes.
