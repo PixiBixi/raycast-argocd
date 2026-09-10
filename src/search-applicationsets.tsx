@@ -20,6 +20,10 @@ export default function SearchApplicationSets() {
   const [scope, setScope] = useState(ALL_SCOPE);
   const [query, setQuery] = useState("");
   const [apps, setApps] = useState<AppSummary[]>([]);
+  // Which instances the applications cache actually held an entry for. A cold cache is not the
+  // same as an ApplicationSet that generated nothing, and rendering "0 apps" for both claimed
+  // a count that was never measured.
+  const [counted, setCounted] = useState<ReadonlySet<string>>(new Set());
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -34,6 +38,7 @@ export default function SearchApplicationSets() {
       const cache = makeCache();
       const cached = await Promise.all(stored.map((instance) => cache.read(instance.id)));
       setApps(cached.flatMap((entry) => entry?.apps ?? []));
+      setCounted(new Set(stored.filter((instance, index) => cached[index] !== undefined).map((i) => i.id)));
     })();
   }, []);
 
@@ -135,6 +140,7 @@ export default function SearchApplicationSets() {
           >
             {rows.map((appSet) => {
               const rollup = rollupAppSet(apps, appSet);
+              const known = counted.has(appSet.instanceId);
               const url = makeClient(state.instance).appSetUrl(appSet.name, appSet.namespace);
               return (
                 <List.Item
@@ -154,13 +160,18 @@ export default function SearchApplicationSets() {
                           },
                         ]
                       : []),
-                    ...(rollup.degraded > 0
+                    ...(known && rollup.degraded > 0
                       ? [{ tag: { value: `${rollup.degraded} degraded`, color: Color.Red } }]
                       : []),
-                    ...(rollup.outOfSync > 0
+                    ...(known && rollup.outOfSync > 0
                       ? [{ tag: { value: `${rollup.outOfSync} out of sync`, color: Color.Yellow } }]
                       : []),
-                    { text: `${rollup.total} apps` },
+                    known
+                      ? { text: `${rollup.total} apps` }
+                      : {
+                          icon: Icon.QuestionMark,
+                          tooltip: "Open Search Applications once to count the generated applications.",
+                        },
                     ...(showInstance
                       ? [{ tag: { value: state.instance.name, color: environmentColor(state.instance.env) } }]
                       : []),
