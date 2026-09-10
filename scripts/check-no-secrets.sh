@@ -32,6 +32,11 @@ report() {
 #   this script        it necessarily contains every pattern it searches for
 EXCLUDE_RE='^(package-lock\.json|scripts/check-no-secrets\.sh)$'
 
+# Every scan below passes -I so grep skips binary files. Screenshots are tracked, and matching
+# a pattern against PNG bytes yields "Binary file ... matches" -- noise that cannot be read,
+# cannot be acted on, and would fail the gate on every commit that adds an image. What a
+# screenshot might actually leak is visible only to a human looking at it.
+
 tracked_files() {
   git ls-files | grep -vE "$EXCLUDE_RE"
 }
@@ -39,17 +44,17 @@ tracked_files() {
 # 1. Credentials by shape. A JWT header always starts with the base64url of {"alg": and a
 #    bearer token in source is never legitimate here: every token in this codebase comes
 #    from the keychain or the argocd CLI at runtime.
-if hits=$(tracked_files | xargs -r grep -nE 'eyJ[A-Za-z0-9_-]{10,}' 2>/dev/null); then
+if hits=$(tracked_files | xargs -r grep -nIE 'eyJ[A-Za-z0-9_-]{10,}' 2>/dev/null); then
   report "a JSON Web Token literal is present in the tree" "$hits"
 fi
 
-if hits=$(tracked_files | xargs -r grep -nEi 'authorization["'"'"']?\s*[:=]\s*["'"'"']bearer [A-Za-z0-9._-]{8,}' 2>/dev/null); then
+if hits=$(tracked_files | xargs -r grep -nIEi 'authorization["'"'"']?\s*[:=]\s*["'"'"']bearer [A-Za-z0-9._-]{8,}' 2>/dev/null); then
   report "a hardcoded bearer credential is present in the tree" "$hits"
 fi
 
 # 2. Kubernetes context names. A GKE context embeds the project, the region and the cluster
 #    name, which is exactly the topology this repository must not publish.
-if hits=$(tracked_files | xargs -r grep -nE '\bgke_[a-z0-9-]+_' 2>/dev/null); then
+if hits=$(tracked_files | xargs -r grep -nIE '\bgke_[a-z0-9-]+_' 2>/dev/null); then
   report "a GKE context name is present in the tree" "$hits"
 fi
 
@@ -58,11 +63,11 @@ fi
 #    exemption is not a substring match. `.internal.` and `.local.` are called out separately because they are the
 #    shape a private cluster endpoint takes.
 allowed_host='(([A-Za-z0-9-]+\.)*example\.(com|org|dev|net)|localhost|127\.0\.0\.1|argo-cd\.readthedocs\.io|developers\.raycast\.com|(www\.)?raycast\.com|json\.schemastore\.org|github\.com|raw\.githubusercontent\.com|nodejs\.org|argoproj\.github\.io|kubernetes\.default\.svc|notlocalhost)'
-if hits=$(tracked_files | xargs -r grep -nEo 'https?://[A-Za-z0-9._-]+' 2>/dev/null | grep -vE "https?://${allowed_host}"); then
+if hits=$(tracked_files | xargs -r grep -nIEo 'https?://[A-Za-z0-9._-]+' 2>/dev/null | grep -vE "https?://${allowed_host}"); then
   report "a URL points at a host that is neither an example nor an allowlisted public service" "$hits"
 fi
 
-if hits=$(tracked_files | xargs -r grep -nE '[a-z0-9-]+\.(internal|local)\.[a-z]' 2>/dev/null); then
+if hits=$(tracked_files | xargs -r grep -nIE '[a-z0-9-]+\.(internal|local)\.[a-z]' 2>/dev/null); then
   report "an internal hostname is present in the tree" "$hits"
 fi
 
@@ -84,7 +89,7 @@ if [ -f "$DENYLIST" ]; then
 fi
 
 # 5. Email addresses other than the maintainer's noreply address.
-if hits=$(tracked_files | xargs -r grep -nEo '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' 2>/dev/null | grep -vE '@(users\.noreply\.github\.com|example\.com)'); then
+if hits=$(tracked_files | xargs -r grep -nIEo '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' 2>/dev/null | grep -vE '@(users\.noreply\.github\.com|example\.com)'); then
   report "an email address that is not a noreply or example address is present in the tree" "$hits"
 fi
 
