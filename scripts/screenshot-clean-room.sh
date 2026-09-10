@@ -26,16 +26,31 @@ readonly SUPPORT="$HOME/Library/Application Support/com.raycast.macos/extensions
 
 name_now() { node -p 'require("./package.json").name'; }
 
+# With `node -e` there is no script slot in process.argv, so the first user argument is
+# argv[1]. Reading argv[2] here set the name to undefined, and JSON.stringify drops an
+# undefined value entirely, which deleted the field instead of renaming it. Hence the
+# read-back below: a write whose effect is never checked is how this repository keeps
+# getting bitten.
 set_name() {
+  local next="$1"
+  [ -n "$next" ] || { printf '::error::set_name called with no name\n' >&2; return 1; }
   node --input-type=module -e '
     import { readFileSync, writeFileSync } from "node:fs";
-    const [, , next] = process.argv;
-    const raw = readFileSync("package.json", "utf8");
-    const parsed = JSON.parse(raw);
+    const next = process.argv[1];
+    if (!next) {
+      throw new Error("no name given");
+    }
+    const parsed = JSON.parse(readFileSync("package.json", "utf8"));
     parsed.name = next;
     writeFileSync("package.json", JSON.stringify(parsed, null, 2) + "\n");
-  ' -- "$1"
+  ' "$next"
   npx prettier --write package.json >/dev/null
+  local written
+  written="$(name_now)"
+  if [ "$written" != "$next" ]; then
+    printf '::error::package.json name is "%s", expected "%s"; nothing was renamed\n' "$written" "$next" >&2
+    return 1
+  fi
 }
 
 case "${1:-}" in
