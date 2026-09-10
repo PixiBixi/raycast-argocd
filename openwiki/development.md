@@ -192,16 +192,16 @@ before it was removed.
 
 ### The rest of the checklist
 
-| Requirement                                        | State                                  |
-| -------------------------------------------------- | -------------------------------------- |
-| Three to six screenshots in `metadata/`, 2000x1250 | Absent, and only a human can take them |
-| `author` set to the Raycast account username       | Set to `pixibixi`, unconfirmed         |
-| Icon legible on light and dark backgrounds         | Never checked on light                 |
-| Command titles as `<verb> <noun>` or `<noun>`      | Done                                   |
-| `CHANGELOG.md` as `## [Title] - {PR_MERGE_DATE}`   | Done, enforced by the payload          |
-| `license: MIT`, one category, `package-lock.json`  | Done, enforced by the payload          |
-| Latest `@raycast/api`, `npm run build` clean       | Done, enforced by the payload          |
-| No personal data in what ships                     | Done, enforced by the leak gate        |
+| Requirement                                        | State                             |
+| -------------------------------------------------- | --------------------------------- |
+| Three to six screenshots in `metadata/`, 2000x1250 | Done, six, taken against the demo |
+| `author` set to the Raycast account username       | Done, `pixibixi` confirmed        |
+| Icon legible on light and dark backgrounds         | Never checked on light            |
+| Command titles as `<verb> <noun>` or `<noun>`      | Done                              |
+| `CHANGELOG.md` as `## [Title] - {PR_MERGE_DATE}`   | Done, enforced by the payload     |
+| `license: MIT`, one category, `package-lock.json`  | Done, enforced by the payload     |
+| Latest `@raycast/api`, `npm run build` clean       | Done, enforced by the payload     |
+| No personal data in what ships                     | Done, enforced by the leak gate   |
 
 Everything marked enforced is checked by `npm run store:payload`, which refuses to write a
 payload rather than reporting a problem and continuing.
@@ -320,9 +320,9 @@ is dropped, that no summary field is empty, that every ApplicationSet is recover
 projecting and put "unknown" in a published screenshot. It is skipped unless `DEMO_ARGOCD`
 points at a running server, the same pattern as `real-instance.test.ts`.
 
-**`author`.** It must equal the Raycast account username, not the GitHub one. They happen to be
-spelled the same here, which is exactly the sort of coincidence worth confirming rather than
-assuming.
+**`author`.** It must equal the Raycast account username, not the GitHub one. They are spelled
+the same here, which was worth confirming rather than assuming: checked against the Raycast
+profile, which reads `@pixibixi`.
 
 ### What publishing actually is
 

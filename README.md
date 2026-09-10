@@ -17,8 +17,10 @@ the usage reference.
 
 ## 🚀 Install
 
-Not published yet. Until it is, the only way to run it is the development install below, which
-leaves the extension registered in Raycast for as long as you keep it.
+Search **ArgoCD** in the Raycast Store, or install it from
+[raycast.com](https://www.raycast.com/pixibixi/argocd).
+
+To run it from source instead, see [Run it locally](#-run-it-locally).
 
 ## 🛠️ Run it locally
 
