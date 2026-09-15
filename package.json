@@ -119,7 +119,7 @@
     }
   ],
   "dependencies": {
-    "@raycast/api": "^2.2.0",
+    "@raycast/api": "^2.3.1",
     "@raycast/utils": "^2.3.1",
     "yaml": "^2.9.0"
   },
