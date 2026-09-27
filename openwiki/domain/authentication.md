@@ -31,6 +31,9 @@ rests on, and it has its own test.
 
 The policy in `createSsoTokenReader`, in order:
 
+- A session recording another server (`baseUrl`, stamped at login and on every renewal) is
+  cleared and a login is asked for, whatever its expiry says. The comparison is local, so it
+  costs no request. A session stored before the field existed carries none and is left alone.
 - A session that is still good is returned **with no request at all**, so the common path costs
   nothing.
 - A lapsing session is renewed and stored.
@@ -177,7 +180,7 @@ worth understanding because it needs no bookkeeping to stay correct:
    branch that serves a non-expiring API token written into the config by hand, since such a
    token has no readable expiry to renew against.
 2. **Otherwise a cached renewal that is still good wins**, so opening a command costs no round
-   trip.
+   trip. A cached renewal recording another server is dropped first, however fresh it is.
 3. **Otherwise the config's refresh token mints a new one.**
 
 Nothing records which refresh token produced which renewal: re-running `argocd login` refreshes
@@ -207,6 +210,26 @@ the corresponding extension", and which names `password` preferences as the way 
 [`lib/auth/secrets.ts`](../../src/lib/auth/secrets.ts) owns the key naming and the validation
 and takes the store as an argument, so both are tested without Raycast.
 [`ui/storage.ts`](../../src/ui/storage.ts) supplies the real one over `LocalStorage`.
+
+### Editing an instance invalidates its credential
+
+An edit keeps the instance id, so the stored credential outlives it. `saveInstances` in
+[`ui/storage.ts`](../../src/ui/storage.ts), the one function every write goes through, diffs the
+new list against the stored one and clears the credentials of any instance for which
+`credentialsInvalidatedBy` ([`config/instances.ts`](../../src/lib/config/instances.ts)) holds:
+another server, or another auth mode.
+
+- **The clearing runs after the write**, never before: clearing first signed the operator out
+  for an edit that a rejected write never committed.
+- **A failed clear is swallowed**, not reported as a failed save, because the configuration is
+  already stored and a retry would diff the new list against itself.
+- **That cleanup is an optimisation, not the safeguard.** The safeguard is the `baseUrl` recorded
+  on the session, which both token readers compare locally (see the policy above and rule 2 of
+  the CLI session). If every clear failed, no token would still reach the wrong server.
+
+`parseSession` in [`auth/session.ts`](../../src/lib/auth/session.ts) rebuilds a stored session
+field by field, which is how `baseUrl` was first added, tested in memory, and silently dropped on
+every load. `SESSION_FIELDS` lists every field so a round-trip test catches the next one.
 
 ### It used to be the macOS keychain, and that was a mistake three times over
 
@@ -245,7 +268,14 @@ double-prompt, and the read-back's original reason all at once.
   report lengths.
 - **Never trust an exit code or a status as evidence of an effect.** Read back what you wrote.
 - **The action offered must match the instance's mode.** An SSO login on a token instance
-  cannot help, and an earlier version offered exactly that.
+  cannot help, and an earlier version offered exactly that. Every view logs in through
+  [`ui/loginToInstance.ts`](../../src/ui/loginToInstance.ts): a copy of that branch in the
+  ApplicationSet view had diverged and ran the CLI login for `sso` instances.
+- **A new `SsoSession` field goes into `parseSession` and `SESSION_FIELDS` too**, or it is lost
+  on the first load.
+- **Provider text rendered on the OIDC callback page goes through `escapeHtml`**
+  ([`auth/oidc.ts`](../../src/lib/auth/oidc.ts)): the loopback URL is predictable, so its
+  `error` and `error_description` are an injection point.
 - **Relevant checks**: `npm test` covers `oidc`, `session`, `sso`, `provider`, `secrets`,
   `cliConfig`, `login` and `settings`. None of them touch a real provider, so the first real
   login remains the first real test of the exchange. A6, A7, A11 and A12 in the
