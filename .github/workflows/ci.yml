@@ -33,10 +33,11 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run format:check
-      - run: npm run typecheck
       # ray build bundles every command with esbuild and fails when a command
       # declared in the manifest has no entry point, which no other job catches.
+      # It also generates raycast-env.d.ts, which typecheck needs: keep it first.
       - run: npm run build
+      - run: npm run typecheck
 
   test:
     name: Test on Node ${{ matrix.node }}
