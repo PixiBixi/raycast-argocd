@@ -122,7 +122,7 @@ Two workflows, hardened. Every job pins its actions by commit SHA, runs
 inherits `permissions: contents: read`.
 
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml): `quality` (lint, format check,
-typecheck, build), `test` on Node 22, 24 and 26, `coverage` with an uploaded artifact, and
+build, then typecheck, since `ray build` generates the `raycast-env.d.ts` that `tsc` needs), `test` on Node 22, 24 and 26, `coverage` with an uploaded artifact, and
 `secrets` running the leak gate.
 
 [`.github/workflows/github-actions.yml`](../.github/workflows/github-actions.yml) runs zizmor

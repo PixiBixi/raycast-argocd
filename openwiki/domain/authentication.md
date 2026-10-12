@@ -23,6 +23,10 @@ in a browser, once. The provider returns a refresh token alongside the id token,
 on [`auth/sso.ts`](../../src/lib/auth/sso.ts) mints a fresh id token from it before any request
 that needs one.
 
+The loopback callback server lives in the command's own process, so `loginWithSso` closes the
+Raycast window with `PopToRootType.Suspended` before opening the browser. A plain pop to root
+would unload the command while the user signs in, and the redirect would hit a closed port.
+
 **Renewal happens ahead of expiry, not on a 401.** That is the deliberate part. A 401 is
 something the operator sees and has to retry; a renewal thirty seconds early is something they
 never see. `RENEW_AHEAD_MS` is 60 seconds, and an expired id token is explicitly **not** a
