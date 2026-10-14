@@ -78,6 +78,13 @@ serves the CLI and this extension both and nobody has to register a second one.
 `exchangeCode` recognises `invalid_client` and raises `PublicClientRequiredError`, which names
 `oidc.cliClientID` as the fix rather than failing obscurely.
 
+**Instances on the bundled Dex need none of this.** When `argocd-cm` carries `dex.config` instead
+of `oidc.config`, `/api/v1/settings` exposes `dexConfig` and no `oidcConfig`. `projectOidcSettings`
+then falls back to Dex: issuer `<instance url>/api/dex`, client `argo-cd-cli` (the public client
+ArgoCD registers in Dex, the one `argocd login --sso` uses), PKCE on. The provider name is shown
+only when there is a single connector. Only when neither config is present does sign-in fail with
+"reports neither an OIDC nor a Dex configuration".
+
 ### What is confirmed about the provider
 
 Read from the provider's own discovery document, which is public:
