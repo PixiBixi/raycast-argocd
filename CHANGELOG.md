@@ -1,10 +1,13 @@
-## [Fix SSO sign-in] - {PR_MERGE_DATE}
+## [Dex sign-in] - {PR_MERGE_DATE}
+
+- Single sign-on now works on instances that log in through ArgoCD's bundled Dex (GitHub,
+  LDAP, SAML connectors...), instead of reporting that the instance has no OIDC configuration.
+
+## [Fix SSO sign-in] - 2026-10-12
 
 - Single sign-on no longer fails with "localhost refused to connect" when the browser login takes
   longer than the Raycast "Pop to Root Search" delay. The command now stays loaded until the
   identity provider redirects back.
-- Single sign-on now works on instances that log in through ArgoCD's bundled Dex (GitHub,
-  LDAP, SAML connectors...), instead of reporting that the instance has no OIDC configuration.
 
 ## [Initial Version] - 2026-09-26
 
