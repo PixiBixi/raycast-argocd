@@ -121,7 +121,7 @@
   "dependencies": {
     "@raycast/api": "^2.7.3",
     "@raycast/utils": "^2.3.2",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.1"
   },
   "scripts": {
     "build": "ray build",
