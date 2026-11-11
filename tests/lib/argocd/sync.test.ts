@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SYNC_FORM,
+  SYNC_PICKUP_TIMEOUT_MS,
   buildSyncRequest,
   describeSyncRequest,
+  isSyncWatchDone,
   type SyncFormValues,
 } from "../../../src/lib/argocd/sync";
 import { ValidationError } from "../../../src/lib/config/instances";
@@ -120,5 +122,38 @@ describe("describeSyncRequest", () => {
   it("names each sync option verbatim, so the operator reads what is sent", () => {
     const description = describeSyncRequest(buildSyncRequest(form({ replace: true })));
     expect(description).toContain("Replace=true");
+  });
+});
+
+describe("isSyncWatchDone", () => {
+  const REQUESTED = Date.parse("2026-11-11T10:00:00Z");
+  const previous = { phase: "Succeeded" as const, operationPending: false, operationStartedAt: "2026-11-11T09:00:00Z" };
+
+  it("keeps watching while the operation runs or terminates", () => {
+    for (const phase of ["Running", "Terminating"] as const) {
+      expect(isSyncWatchDone({ ...previous, phase }, REQUESTED, REQUESTED + 1000)).toBe(false);
+    }
+  });
+
+  it("does not stop on the previous operation's result right after the sync request", () => {
+    expect(isSyncWatchDone(previous, REQUESTED, REQUESTED + 500)).toBe(false);
+  });
+
+  it("keeps watching while the requested operation is still queued", () => {
+    const queued = { phase: "Succeeded" as const, operationPending: true, operationStartedAt: "2026-11-11T10:00:01Z" };
+    expect(isSyncWatchDone(queued, REQUESTED, REQUESTED + 2000)).toBe(false);
+  });
+
+  it("stops on the outcome of the operation started by this request", () => {
+    const mine = { phase: "Failed" as const, operationPending: false, operationStartedAt: "2026-11-11T10:00:02Z" };
+    expect(isSyncWatchDone(mine, REQUESTED, REQUESTED + 4000)).toBe(true);
+  });
+
+  it("gives up waiting for the controller after a while, so the view never polls forever", () => {
+    expect(isSyncWatchDone(previous, REQUESTED, REQUESTED + SYNC_PICKUP_TIMEOUT_MS + 1)).toBe(true);
+  });
+
+  it("stops on any finished operation when only watching, with no request of its own", () => {
+    expect(isSyncWatchDone(previous, undefined, REQUESTED)).toBe(true);
   });
 });

@@ -57,13 +57,14 @@ export function SyncForm({ app, instance }: Props) {
     }
 
     try {
+      const requestedAt = Date.now();
       await makeClient(instance).sync(app.name, app.namespace, body);
       await showToast({
         style: Toast.Style.Success,
         title: values.dryRun ? `Dry run started for ${app.name}` : `Sync started for ${app.name}`,
       });
       pop();
-      push(<SyncStatus app={app} instance={instance} />);
+      push(<SyncStatus app={app} instance={instance} requestedAt={requestedAt} />);
     } catch (error) {
       await showToast({
         style: Toast.Style.Failure,

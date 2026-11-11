@@ -2,13 +2,14 @@
  * Follows a running sync.
  *
  * Polling one field-projected application every two seconds is a few kilobytes per tick, and it
- * stops on its own the moment the phase leaves Running or Terminating. An SSE stream would be
- * cheaper in theory and worse in practice: a Raycast view is short-lived and a dropped stream
- * fails far less gracefully than a missed poll.
+ * stops on its own once the requested operation has finished (isSyncWatchDone). An SSE stream
+ * would be cheaper in theory and worse in practice: a Raycast view is short-lived and a dropped
+ * stream fails far less gracefully than a missed poll.
  */
 
 import { Action, ActionPanel, Color, Icon, List, useNavigation } from "@raycast/api";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isSyncWatchDone } from "../lib/argocd/sync";
 import type { AppDetail, AppSummary } from "../lib/argocd/types";
 import type { ArgoInstance } from "../lib/config/instances";
 import { makeClient } from "./deps";
@@ -19,6 +20,8 @@ const POLL_MS = 2000;
 interface Props {
   app: AppSummary;
   instance: ArgoInstance;
+  /** Epoch ms just before the sync request, so the previous operation's outcome is not taken for it. */
+  requestedAt?: number;
 }
 
 function resourceIcon(status: string): { source: Icon; tintColor: Color } {
@@ -34,7 +37,7 @@ function resourceIcon(status: string): { source: Icon; tintColor: Color } {
   }
 }
 
-export function SyncStatus({ app, instance }: Props) {
+export function SyncStatus({ app, instance, requestedAt }: Props) {
   const { pop } = useNavigation();
   const [detail, setDetail] = useState<AppDetail | undefined>(undefined);
   const [error, setError] = useState<Error | undefined>(undefined);
@@ -61,8 +64,7 @@ export function SyncStatus({ app, instance }: Props) {
         }
         setDetail(next);
         setError(undefined);
-        const running = next.phase === "Running" || next.phase === "Terminating";
-        if (!running) {
+        if (isSyncWatchDone(next, requestedAt, Date.now())) {
           setWatching(false);
           return;
         }
@@ -85,7 +87,7 @@ export function SyncStatus({ app, instance }: Props) {
         clearTimeout(timer.current);
       }
     };
-  }, [app.name, app.namespace, instance]);
+  }, [app.name, app.namespace, instance, requestedAt]);
 
   const phase = detail?.phase;
   const url = makeClient(instance).appUrl(app.name, app.namespace);

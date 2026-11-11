@@ -226,9 +226,10 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
       return;
     }
     try {
+      const requestedAt = Date.now();
       await client.sync(app.name, app.namespace, buildSyncRequest(DEFAULT_SYNC_FORM));
       await showToast({ style: Toast.Style.Success, title: `Sync started for ${app.name}` });
-      push(<SyncStatus app={app} instance={instance} />);
+      push(<SyncStatus app={app} instance={instance} requestedAt={requestedAt} />);
     } catch (error) {
       await showToast({
         style: Toast.Style.Failure,

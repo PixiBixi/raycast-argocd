@@ -179,6 +179,11 @@ describe("projectDetail", () => {
     });
   });
 
+  it("flags an operation the controller has not finished, which it clears on completion", () => {
+    expect(projectDetail(RAW_DETAIL, "i1")?.operationPending).toBe(false);
+    expect(projectDetail({ ...RAW_DETAIL, operation: { sync: {} } }, "i1")?.operationPending).toBe(true);
+  });
+
   it("reads the most recent history entry, which ArgoCD stores last", () => {
     expect(projectDetail(RAW_DETAIL, "i1")).toMatchObject({
       lastSyncRevision: "bbbbbbb",
