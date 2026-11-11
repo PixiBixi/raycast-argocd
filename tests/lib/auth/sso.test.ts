@@ -220,3 +220,44 @@ describe("a session minted for another server is void with no request", () => {
     expect(d.writeSession).toHaveBeenCalledWith("i1", expect.objectContaining({ baseUrl: INSTANCE.baseUrl }));
   });
 });
+
+describe("concurrent renewals", () => {
+  const lapsing = () => session({ expiresAt: NOW + RENEW_AHEAD_MS - 1 });
+
+  it("spends the refresh token once when two requests need a renewal together", async () => {
+    let release: (value: { idToken: string; refreshToken: string; expiresAt: number }) => void = () => {};
+    const refresh = vi.fn(
+      () =>
+        new Promise<{ idToken: string; refreshToken: string; expiresAt: number }>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const d = deps({ readSession: vi.fn().mockResolvedValue(lapsing()), refresh });
+    const read = createSsoTokenReader(d);
+
+    const first = read(INSTANCE);
+    const second = read(INSTANCE);
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalled());
+    release({ idToken: "renewed-id-token", refreshToken: "rotated", expiresAt: NOW + 3600_000 });
+
+    await expect(Promise.all([first, second])).resolves.toEqual(["renewed-id-token", "renewed-id-token"]);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not share a renewal between two instances", async () => {
+    const d = deps({ readSession: vi.fn().mockResolvedValue(lapsing()) });
+    const read = createSsoTokenReader(d);
+    await Promise.all([read(INSTANCE), read({ ...INSTANCE, id: "i2" })]);
+    expect(d.refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a session another process renewed while this one was refused", async () => {
+    const renewedElsewhere = session({ idToken: "other-process-token", refreshToken: "rotated-elsewhere" });
+    const d = deps({
+      readSession: vi.fn().mockResolvedValueOnce(lapsing()).mockResolvedValue(renewedElsewhere),
+      refresh: vi.fn().mockRejectedValue(new OidcError("refresh token is invalid", "invalid_grant")),
+    });
+    await expect(createSsoTokenReader(d)(INSTANCE)).resolves.toBe("other-process-token");
+    expect(d.clearSession).not.toHaveBeenCalled();
+  });
+});
