@@ -169,7 +169,7 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
     data: detail,
     isLoading,
     error,
-    revalidate,
+    mutate,
   } = useCachedPromise(
     // The instance id is in the arguments because the hook keys its disk cache on them.
     (_instanceId: string, name: string, namespace: string) => makeClient(instance).getApplication(name, namespace),
@@ -204,8 +204,9 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
       title: mode === "hard" ? "Hard refreshing" : "Refreshing",
     });
     try {
-      await client.getApplication(app.name, app.namespace, mode);
-      await revalidate();
+      // The refresh answer is the fresh application: stored as is rather than fetched twice.
+      const fresh = await client.getApplication(app.name, app.namespace, mode);
+      await mutate(undefined, { optimisticUpdate: () => fresh, shouldRevalidateAfter: false });
       onRefresh(instance.id);
       toast.style = Toast.Style.Success;
       toast.title = "Refreshed";
