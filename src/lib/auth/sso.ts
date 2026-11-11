@@ -16,6 +16,7 @@ import type { OidcSettings } from "../argocd/settings";
 import { AuthError } from "./provider";
 import { OidcError, type OidcEndpoints, type TokenSet } from "./oidc";
 import { matchesServer, matchesProvider, mergeRenewal, needsRenewal, type SsoSession } from "./session";
+import { singleFlight } from "./singleFlight";
 
 export interface SsoDeps {
   /** The stored session for this instance, or undefined when there has been no login. */
@@ -41,7 +42,7 @@ function loginRequired(instance: ArgoInstance, host: string, why: string): AuthE
  * only a renewal that the provider refuses turns into something the operator has to see.
  */
 export function createSsoTokenReader(deps: SsoDeps): (instance: ArgoInstance) => Promise<string> {
-  return async (instance) => {
+  return singleFlight(async (instance: ArgoInstance) => {
     const host = new URL(instance.baseUrl).host;
     const stored = await deps.readSession(instance.id);
     if (!stored) {
@@ -89,6 +90,12 @@ export function createSsoTokenReader(deps: SsoDeps): (instance: ArgoInstance) =>
       // A refused refresh token is spent: keeping it would retry the same failure on every
       // request. Anything else, a provider outage for instance, leaves it alone to be retried.
       if (error instanceof OidcError && error.code === "invalid_grant") {
+        // The menu bar runs in its own process and may have rotated the token first: its
+        // fresh session must survive this refusal.
+        const current = await deps.readSession(instance.id);
+        if (current && current.refreshToken !== stored.refreshToken && !needsRenewal(current, deps.now())) {
+          return current.idToken;
+        }
         await deps.clearSession(instance.id);
         throw loginRequired(instance, host, "The single sign-on session was revoked or has expired.");
       }
@@ -98,5 +105,5 @@ export function createSsoTokenReader(deps: SsoDeps): (instance: ArgoInstance) =>
     const renewed = mergeRenewal(stored, tokens, instance.baseUrl);
     await deps.writeSession(instance.id, renewed);
     return renewed.idToken;
-  };
+  });
 }

@@ -7,6 +7,7 @@
  */
 
 import { ValidationError } from "../config/instances";
+import type { AppDetail } from "./types";
 
 export interface SyncFormValues {
   revision: string;
@@ -117,4 +118,35 @@ export function describeSyncRequest(request: SyncRequest): string {
   if (request.retryStrategy) parts.push(`retries up to ${request.retryStrategy.limit} times`);
 
   return parts.length === 0 ? "Syncs with the application's default options." : `Syncs with ${parts.join(", ")}.`;
+}
+
+/** How long a requested sync may stay unreported by the controller before the watch gives up. */
+export const SYNC_PICKUP_TIMEOUT_MS = 60_000;
+
+/** Server and local clocks differ; a start this much before the request still counts as ours. */
+const CLOCK_SKEW_MS = 30_000;
+
+/**
+ * True once the watch can stop. POST /sync only sets `operation`; the controller writes
+ * `operationState` later and clears `operation` when done, so until then the phase on the
+ * application is still the previous operation's.
+ */
+export function isSyncWatchDone(
+  detail: Pick<AppDetail, "phase" | "operationPending" | "operationStartedAt">,
+  requestedAt: number | undefined,
+  now: number,
+): boolean {
+  if (detail.phase === "Running" || detail.phase === "Terminating") {
+    return false;
+  }
+  const waitedTooLong = requestedAt !== undefined && now - requestedAt > SYNC_PICKUP_TIMEOUT_MS;
+  if (detail.operationPending) {
+    return waitedTooLong;
+  }
+  if (requestedAt === undefined) {
+    return true;
+  }
+  const startedAt = detail.operationStartedAt ? Date.parse(detail.operationStartedAt) : Number.NaN;
+  const ours = Number.isFinite(startedAt) && startedAt >= requestedAt - CLOCK_SKEW_MS;
+  return ours || waitedTooLong;
 }

@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ownedByAppSet } from "../lib/argocd/appset";
+import type { AppSummary } from "../lib/argocd/types";
 import type { ArgoInstance } from "../lib/config/instances";
 import { ApplicationListView } from "./ApplicationListView";
 import { loginToInstance } from "./loginToInstance";
@@ -39,6 +40,12 @@ export function AppSetApplications({ instance, namespace, appSetName }: Props) {
     }
   }, [instance, refresh]);
 
+  // Stable across renders, so the list view does not refilter every application per keystroke.
+  const owned = useCallback(
+    (app: AppSummary) => ownedByAppSet(app, instance.id, namespace, appSetName),
+    [instance.id, namespace, appSetName],
+  );
+
   return (
     <ApplicationListView
       states={states}
@@ -48,7 +55,7 @@ export function AppSetApplications({ instance, namespace, appSetName }: Props) {
       onRefresh={refresh}
       onLogin={() => void login()}
       navigationTitle={`Applications from ${appSetName}`}
-      filter={(app) => ownedByAppSet(app, instance.id, namespace, appSetName)}
+      filter={owned}
       emptyTitle={`${appSetName} has generated no application yet`}
     />
   );

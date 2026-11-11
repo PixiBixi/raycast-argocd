@@ -371,6 +371,7 @@ export function projectDetail(raw: unknown, instanceId: string): AppDetail | und
     summaryImages: images,
     operationMessage: asString(dig(status, "operationState", "message")),
     operationStartedAt: asString(dig(status, "operationState", "startedAt")),
+    operationPending: asDict(app?.operation) !== undefined,
     lastSyncRevision: asString(latest?.revision),
     lastSyncDeployedAt: asString(latest?.deployedAt),
     syncResources: projectSyncResources(status),

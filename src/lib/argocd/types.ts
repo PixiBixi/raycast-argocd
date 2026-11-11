@@ -122,6 +122,8 @@ export interface AppDetail extends AppSummary {
   summaryImages: string[];
   operationMessage: string | undefined;
   operationStartedAt: string | undefined;
+  /** True while `operation` is set: requested and not finished, which ArgoCD clears on completion. */
+  operationPending: boolean;
   lastSyncRevision: string | undefined;
   lastSyncDeployedAt: string | undefined;
   syncResources: SyncResultResource[];

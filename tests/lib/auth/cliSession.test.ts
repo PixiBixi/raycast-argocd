@@ -235,3 +235,73 @@ describe("a cached renewal minted for another server is void", () => {
     expect(d.writeCachedSession).toHaveBeenCalledWith("i1", expect.objectContaining({ baseUrl: INSTANCE.baseUrl }));
   });
 });
+
+describe("a rotated refresh token is the one renewed from", () => {
+  const lapsedConfig = () => vi.fn().mockResolvedValue(cliToken({ expiresAt: new Date(NOW - 1) }));
+  const lapsedCache = (overrides: Partial<SsoSession> = {}) =>
+    vi.fn().mockResolvedValue(cached({ expiresAt: NOW - 1, refreshToken: "rotated-refresh-token", ...overrides }));
+
+  it("uses the refresh token cached by the previous renewal", async () => {
+    const d = deps({ readCliToken: lapsedConfig(), readCachedSession: lapsedCache() });
+    await expect(createCliTokenReader(d)(INSTANCE)).resolves.toBe("renewed-id-token");
+    expect(d.refresh).toHaveBeenCalledTimes(1);
+    expect(d.refresh).toHaveBeenCalledWith(ENDPOINTS, "public-client", "rotated-refresh-token", ["openid", "groups"]);
+  });
+
+  it("falls back to the config refresh token when the cached one is refused", async () => {
+    const refresh = vi
+      .fn()
+      .mockRejectedValueOnce(new OidcError("refresh token is invalid", "invalid_grant"))
+      .mockResolvedValue({ idToken: "renewed-id-token", refreshToken: undefined, expiresAt: NOW + 3600_000 });
+    const d = deps({ readCliToken: lapsedConfig(), readCachedSession: lapsedCache(), refresh });
+    await expect(createCliTokenReader(d)(INSTANCE)).resolves.toBe("renewed-id-token");
+    expect(refresh.mock.calls.map((call) => call[2])).toEqual(["rotated-refresh-token", "config-refresh-token"]);
+    expect(d.writeCachedSession).toHaveBeenCalledWith(
+      "i1",
+      expect.objectContaining({ idToken: "renewed-id-token", refreshToken: "config-refresh-token" }),
+    );
+  });
+
+  it("asks for a login only when both refresh tokens are refused", async () => {
+    const d = deps({
+      readCliToken: lapsedConfig(),
+      readCachedSession: lapsedCache(),
+      refresh: vi.fn().mockRejectedValue(new OidcError("refresh token is invalid", "invalid_grant")),
+    });
+    await expect(createCliTokenReader(d)(INSTANCE)).rejects.toThrowError(/revoked or expired/);
+    expect(d.refresh).toHaveBeenCalledTimes(2);
+    expect(d.clearCachedSession).toHaveBeenCalledWith("i1");
+  });
+
+  it("never renews from a cached refresh token minted for another server", async () => {
+    const d = deps({
+      readCliToken: lapsedConfig(),
+      readCachedSession: lapsedCache({ baseUrl: "https://old.example.com" }),
+    });
+    await createCliTokenReader(d)(INSTANCE);
+    expect(d.refresh).toHaveBeenCalledWith(ENDPOINTS, "public-client", "config-refresh-token", ["openid", "groups"]);
+    expect(d.writeCachedSession).toHaveBeenCalledWith(
+      "i1",
+      expect.not.objectContaining({ idToken: "cached-id-token" }),
+    );
+  });
+
+  it("renews once when two requests need it together", async () => {
+    let release: (value: { idToken: string; refreshToken: string; expiresAt: number }) => void = () => {};
+    const refresh = vi.fn(
+      () =>
+        new Promise<{ idToken: string; refreshToken: string; expiresAt: number }>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const read = createCliTokenReader(
+      deps({ readCliToken: lapsedConfig(), readCachedSession: lapsedCache(), refresh }),
+    );
+    const first = read(INSTANCE);
+    const second = read(INSTANCE);
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalled());
+    release({ idToken: "renewed-id-token", refreshToken: "rotated-again", expiresAt: NOW + 3600_000 });
+    await expect(Promise.all([first, second])).resolves.toEqual(["renewed-id-token", "renewed-id-token"]);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+});

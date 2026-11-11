@@ -163,9 +163,10 @@ the user always sees something instantly and the freshness indicator says how st
 
 A corrupt or schema-mismatched cache file is discarded, not repaired.
 
-Refreshes across instances run concurrently, each with its own `AbortController` timeout
-(`requestTimeoutSeconds`, default 15). One unreachable instance degrades to "showing cached
-data from N minutes ago" for that instance only; the others still refresh.
+Refreshes across instances run concurrently, each with its own timeout (`requestTimeoutSeconds`,
+default 15) on the headers and then on each pause between body chunks, so a 30 MB list over a
+slow link is not cut off mid-body. One unreachable instance degrades to "showing cached data
+from N minutes ago" for that instance only; the others still refresh.
 
 `resourceVersion` is deliberately **not** captured. Streaming reads only the `items` array, so
 the top-level metadata is never seen, and nothing consumed that field: it was stored for a delta

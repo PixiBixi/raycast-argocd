@@ -1,4 +1,20 @@
-## [Dex sign-in] - {PR_MERGE_DATE}
+## [Reliability fixes] - {PR_MERGE_DATE}
+
+- An application with the same name on two instances no longer shows the other instance's
+  detail or diff from the local cache.
+- Single sign-on and the `argocd` CLI session renew from the latest refresh token, once per
+  instance, so a provider that rotates refresh tokens no longer logs you out.
+- After a sync, the status view waits for the new operation instead of stopping on the result
+  of the previous one.
+- A large application list on a slow link is no longer cut off by the request timeout, which now
+  applies to the wait for the server rather than to the whole download.
+- A response that is not an application list (a proxy or captive portal page) is reported as an
+  error instead of being cached as an empty instance.
+- Errors are reported for what they are (timeout, network, unexpected response), and a failure
+  while loading no longer leaves a command spinning.
+- Faster parsing of large application lists, and one request instead of two on refresh.
+
+## [Dex sign-in] - 2026-10-14
 
 - Single sign-on now works on instances that log in through ArgoCD's bundled Dex (GitHub,
   LDAP, SAML connectors...), instead of reporting that the instance has no OIDC configuration.

@@ -19,18 +19,41 @@
  * small enough to test exhaustively, which a general streaming parser would not be.
  */
 
-const OPENERS = new Set(["{", "["]);
-const CLOSERS = new Set(["}", "]"]);
+const QUOTE = 0x22;
+const COMMA = 0x2c;
+const OPEN_BRACE = 0x7b;
+const CLOSE_BRACE = 0x7d;
+const OPEN_BRACKET = 0x5b;
+const CLOSE_BRACKET = 0x5d;
+
+/** JSON insignificant whitespace: space, tab, line feed, carriage return. */
+function isWhitespace(code: number): boolean {
+  return code === 0x20 || code === 0x09 || code === 0x0a || code === 0x0d;
+}
+
+/**
+ * A 200 that is not the expected list: the array never opened (an HTML page from a proxy or a
+ * captive portal) or never closed (a body cut short). Caching either as a valid list would show
+ * an empty or partial instance for the whole cache lifetime with no error.
+ */
+export class MalformedListError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MalformedListError";
+  }
+}
 
 interface ScanState {
-  /** Characters of the element currently being accumulated, empty when between elements. */
-  buffer: string;
+  /** Start of the current element carried over from previous chunks, empty when between elements. */
+  pending: string;
+  /** True while an element is being accumulated, even if nothing is pending yet. */
+  inElement: boolean;
   depth: number;
   inString: boolean;
   escaped: boolean;
   /** True once the opening bracket of the target array has been consumed. */
   inArray: boolean;
-  /** True once the array has been closed, after which everything is ignored. */
+  /** True once the array has been closed (or was null), after which everything is ignored. */
   done: boolean;
   /** Text not yet searched for the array key, kept bounded. */
   prelude: string;
@@ -38,7 +61,8 @@ interface ScanState {
 
 function initialState(): ScanState {
   return {
-    buffer: "",
+    pending: "",
+    inElement: false,
     depth: 0,
     inString: false,
     escaped: false,
@@ -63,10 +87,10 @@ function findArrayStart(text: string, key: string): number {
       return -1;
     }
     let index = at + needle.length;
-    while (index < text.length && /\s/.test(text[index] as string)) index++;
+    while (index < text.length && isWhitespace(text.charCodeAt(index))) index++;
     if (text[index] === ":") {
       index++;
-      while (index < text.length && /\s/.test(text[index] as string)) index++;
+      while (index < text.length && isWhitespace(text.charCodeAt(index))) index++;
       if (text[index] === "[") {
         return index + 1;
       }
@@ -105,66 +129,99 @@ function feed(state: ScanState, chunk: string, key: string, out: unknown[]): voi
     text = combined.slice(start);
   }
 
-  for (let index = 0; index < text.length; index++) {
-    const char = text[index] as string;
+  // Elements are cut out with slice() rather than built a character at a time: string
+  // concatenation per character was the bulk of the scan time on a large list.
+  const length = text.length;
+  let elementStart = state.inElement ? 0 : -1;
+  // Cached position of the next backslash, so skipping a string stays linear.
+  let nextBackslash = -1;
+  let index = 0;
 
+  const emit = (end: number) => {
+    const piece = elementStart === -1 ? "" : text.slice(elementStart, end);
+    flush(state.pending + piece, out);
+    state.pending = "";
+    state.inElement = false;
+    elementStart = -1;
+  };
+
+  while (index < length) {
     if (state.inString) {
-      state.buffer += char;
       if (state.escaped) {
         state.escaped = false;
-      } else if (char === "\\") {
-        state.escaped = true;
-      } else if (char === '"') {
-        state.inString = false;
+        index++;
+        continue;
       }
+      const quote = text.indexOf('"', index);
+      if (nextBackslash !== -2 && nextBackslash < index) {
+        const found = text.indexOf("\\", index);
+        nextBackslash = found === -1 ? -2 : found;
+      }
+      if (nextBackslash >= 0 && (quote === -1 || nextBackslash < quote)) {
+        state.escaped = true;
+        index = nextBackslash + 1;
+        continue;
+      }
+      if (quote === -1) {
+        index = length;
+        break;
+      }
+      state.inString = false;
+      index = quote + 1;
       continue;
     }
 
-    if (char === '"') {
+    const code = text.charCodeAt(index);
+
+    if (code === QUOTE) {
       state.inString = true;
-      state.buffer += char;
-      continue;
-    }
-
-    if (OPENERS.has(char)) {
+    } else if (code === OPEN_BRACE || code === OPEN_BRACKET) {
       state.depth++;
-      state.buffer += char;
-      continue;
-    }
-
-    if (CLOSERS.has(char)) {
+    } else if (code === CLOSE_BRACE || code === CLOSE_BRACKET) {
       if (state.depth === 0) {
         // The closing bracket of the target array.
-        flush(state, out);
+        if (state.inElement) {
+          emit(index);
+        }
         state.done = true;
         return;
       }
       state.depth--;
-      state.buffer += char;
       if (state.depth === 0) {
-        flush(state, out);
+        emit(index + 1);
+        index++;
+        continue;
       }
-      continue;
+    } else if (state.depth === 0) {
+      if (code === COMMA) {
+        // A complete object or array was flushed by its closing bracket; anything left here is
+        // a scalar element.
+        if (state.inElement) {
+          emit(index);
+        }
+        index++;
+        continue;
+      }
+      if (isWhitespace(code)) {
+        index++;
+        continue;
+      }
     }
 
-    if (char === "," && state.depth === 0) {
-      // Separator between elements. A complete element has already been flushed by its closing
-      // bracket; anything left here is a scalar element, which this scanner does not expect.
-      flush(state, out);
-      continue;
+    if (!state.inElement) {
+      state.inElement = true;
+      elementStart = index;
     }
+    index++;
+  }
 
-    if (state.depth === 0 && /\s/.test(char)) {
-      continue;
-    }
-
-    state.buffer += char;
+  if (state.inElement) {
+    state.pending += text.slice(elementStart === -1 ? 0 : elementStart);
   }
 }
 
-function flush(state: ScanState, out: unknown[]): void {
-  const text = state.buffer.trim();
-  state.buffer = "";
+function flush(raw: string, out: unknown[]): void {
+  const text = raw.trim();
   if (text.length === 0) {
     return;
   }
@@ -179,6 +236,11 @@ function flush(state: ScanState, out: unknown[]): void {
 export interface StreamArrayOptions {
   /** Name of the top-level array to extract. */
   key: string;
+  /**
+   * False for an endpoint that omits the array when it is empty. When true (the default), a
+   * body without it is a MalformedListError. A truncated array is one either way.
+   */
+  required?: boolean;
   /** Called with each parsed element. Return value ignored; throwing aborts the scan. */
   onItem: (item: unknown) => void;
 }
@@ -203,9 +265,11 @@ export async function streamArrayItems(chunks: AsyncIterable<string>, options: S
     }
   }
 
-  // A truncated body leaves a partial element behind; it is incomplete, so it is discarded.
-  if (!state.done && state.buffer.trim().length > 0) {
-    state.buffer = "";
+  if (state.inArray) {
+    throw new MalformedListError(`The "${options.key}" array ended before it was closed.`);
+  }
+  if (options.required ?? true) {
+    throw new MalformedListError(`The response carries no "${options.key}" array.`);
   }
 }
 

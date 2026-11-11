@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { UNKNOWN_REACHABILITY, type Reachability } from "../lib/argocd/probe";
 import type { AppSummary } from "../lib/argocd/types";
 import type { ArgoInstance } from "../lib/config/instances";
+import { settleWithError } from "../lib/model/settle";
 import { loadApplications, type LoadedInstance } from "./loadApplications";
 
 export interface InstanceState {
@@ -75,6 +76,10 @@ export function useApplications(instances: ArgoInstance[]): UseApplicationsResul
       cancelled: () => cancelled,
       onCached: (loaded) => patch(loaded, true),
       onSettled: (loaded) => patch(loaded, false),
+    }).catch((error: unknown) => {
+      if (!cancelled) {
+        setStates((current) => settleWithError(current, error));
+      }
     });
 
     return () => {

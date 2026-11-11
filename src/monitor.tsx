@@ -81,7 +81,12 @@ export default function Monitor() {
         ),
       );
       setLoading(false);
-    })();
+    })().catch(() => {
+      // Ends the menu bar run, which otherwise stays loaded forever; the next interval retries.
+      if (!cancelled) {
+        setLoading(false);
+      }
+    });
 
     return () => {
       cancelled = true;

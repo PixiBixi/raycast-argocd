@@ -24,6 +24,7 @@ import { deriveAppSets, mergeAppSets, type AppSetSummary } from "../lib/argocd/a
 import { UnreachableError } from "../lib/argocd/errors";
 import { UNKNOWN_REACHABILITY, isProbeStale, type Reachability } from "../lib/argocd/probe";
 import type { ArgoInstance } from "../lib/config/instances";
+import { settleWithError } from "../lib/model/settle";
 import { makeCache, makeClient, probe } from "./deps";
 import { loadReachability, saveReachability } from "./storage";
 
@@ -148,7 +149,11 @@ export function useAppSets(instances: ArgoInstance[]): UseAppSetsResult {
       }
     }
 
-    void run();
+    void run().catch((error: unknown) => {
+      if (!cancelled) {
+        setStates((current) => settleWithError(current, error));
+      }
+    });
 
     return () => {
       cancelled = true;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectArrayItems, decodeStream, streamArrayItems } from "../../../src/lib/argocd/stream";
+import { MalformedListError, collectArrayItems, decodeStream, streamArrayItems } from "../../../src/lib/argocd/stream";
 
 /** Feeds a string one chunk at a time, so a boundary can be forced anywhere. */
 async function* chunked(text: string, size: number): AsyncGenerator<string> {
@@ -8,9 +8,9 @@ async function* chunked(text: string, size: number): AsyncGenerator<string> {
   }
 }
 
-async function stream(text: string, size: number, key = "items"): Promise<unknown[]> {
+async function stream(text: string, size: number, key = "items", required = true): Promise<unknown[]> {
   const items: unknown[] = [];
-  await streamArrayItems(chunked(text, size), { key, onItem: (item) => items.push(item) });
+  await streamArrayItems(chunked(text, size), { key, required, onItem: (item) => items.push(item) });
   return items;
 }
 
@@ -128,13 +128,53 @@ describe("streamArrayItems", () => {
     expect(seen).toEqual([1, 2, 3]);
   });
 
-  it("discards a partial element left by a truncated body", async () => {
-    const items = await stream('{"items":[{"name":"a"},{"name":"b"', 5);
-    expect(items).toHaveLength(1);
+  it("rejects a body that ends before the array closes, rather than caching a partial list", async () => {
+    await expect(stream('{"items":[{"name":"a"},{"name":"b"', 5)).rejects.toThrowError(MalformedListError);
   });
 
-  it("returns nothing for an empty body", async () => {
-    expect(await stream("", 4)).toEqual([]);
+  it("rejects an empty body", async () => {
+    await expect(stream("", 4)).rejects.toThrowError(MalformedListError);
+  });
+
+  it("rejects a 200 that carries no array at all, such as a proxy's HTML page", async () => {
+    await expect(stream("<html><body>Sign in to the portal</body></html>", 7)).rejects.toThrowError(MalformedListError);
+    await expect(stream('{"metadata":{}}', 7)).rejects.toThrowError(MalformedListError);
+  });
+
+  it("accepts a null array, which is how an empty list is serialised", async () => {
+    expect(await stream('{"metadata":{},"items":null}', 3)).toEqual([]);
+  });
+
+  it("accepts an absent array when the endpoint omits it when empty", async () => {
+    expect(await stream("{}", 1, "items", false)).toEqual([]);
+  });
+
+  it("still rejects a truncated array when the key is optional", async () => {
+    await expect(stream('{"items":[{"name":"a"}', 4, "items", false)).rejects.toThrowError(MalformedListError);
+  });
+
+  it("emits scalar elements and elements split across many chunks", async () => {
+    expect(await stream('{"items":[1, "two" ,{"n":3},[4],null]}', 3)).toEqual([1, "two", { n: 3 }, [4], null]);
+  });
+
+  it("matches JSON.parse on a list mixing escapes, unicode and nesting, at every chunk size", async () => {
+    const items = Array.from({ length: 12 }, (_, n) => ({
+      name: `app-${n}`,
+      note: `${"\\".repeat(n % 4)}"q" ]}{ , \u00e9t\u00e9 ${"\n".repeat(n % 3)}`,
+      nested: { list: [n, [n, { deep: "x".repeat(n) }]], empty: {} },
+    }));
+    const text = JSON.stringify({ kind: "List", items, metadata: { after: "[1,2]" } });
+    for (const size of [1, 2, 3, 5, 8, 17, 64, 1000]) {
+      expect(await stream(text, size)).toEqual(items);
+    }
+  });
+
+  it("survives a backslash run straddling a chunk boundary", async () => {
+    const text = JSON.stringify({ items: [{ note: 'a\\\\"b' }, { note: "c" }] });
+    for (let size = 1; size <= text.length; size++) {
+      const items = (await stream(text, size)) as { note: string }[];
+      expect(items.map((item) => item.note)).toEqual(['a\\\\"b', "c"]);
+    }
   });
 
   it("does not retain the whole body: the prelude stays bounded", async () => {
