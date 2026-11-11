@@ -97,9 +97,10 @@ export function ResourceDiffView({ appName, appNamespace, instance, resource }: 
     error,
     revalidate,
   } = useCachedPromise(
-    (name: string, namespace: string, target: ResourceStatus | undefined) =>
+    // The instance id is in the arguments because the hook keys its disk cache on them.
+    (_instanceId: string, name: string, namespace: string, target: ResourceStatus | undefined) =>
       makeClient(instance).getManagedResources(name, namespace, target),
-    [appName, appNamespace, resource],
+    [instance.id, appName, appNamespace, resource],
     { keepPreviousData: true },
   );
 

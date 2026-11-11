@@ -171,8 +171,9 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
     error,
     revalidate,
   } = useCachedPromise(
-    (name: string, namespace: string) => makeClient(instance).getApplication(name, namespace),
-    [app.name, app.namespace],
+    // The instance id is in the arguments because the hook keys its disk cache on them.
+    (_instanceId: string, name: string, namespace: string) => makeClient(instance).getApplication(name, namespace),
+    [instance.id, app.name, app.namespace],
     // The error is taken and rendered rather than left to surface as a stack trace, which is
     // what an expired session used to produce here while every list view reported it properly.
     { keepPreviousData: true, failureToastOptions: { title: `Could not load ${app.name}` } },
@@ -183,7 +184,7 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
   // One small request for the commit actually deployed. Skipped until the revision is known,
   // and a failure is swallowed: this is context, not something to block the view on.
   const { data: revisionMetadata } = useCachedPromise(
-    async (name: string, namespace: string, revision: string | undefined) => {
+    async (_instanceId: string, name: string, namespace: string, revision: string | undefined) => {
       if (!revision) {
         return undefined;
       }
@@ -193,7 +194,7 @@ export function ApplicationDetail({ app, instance, onRefresh }: Props) {
         return undefined;
       }
     },
-    [app.name, app.namespace, current.revision],
+    [instance.id, app.name, app.namespace, current.revision],
     { keepPreviousData: true },
   );
 

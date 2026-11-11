@@ -31,3 +31,25 @@ describe("lib boundary", () => {
     expect(source).not.toMatch(/require\(["']@raycast\//);
   });
 });
+
+describe("persistent hook caches", () => {
+  // useCachedPromise keys its on-disk cache on the function source and its arguments only, so
+  // two instances serving an application of the same name would share one entry.
+  const files = walk(join(process.cwd(), "src")).filter((file) => file.endsWith(".tsx"));
+  const calls = files.flatMap((file) => {
+    const source = readFileSync(file, "utf8");
+    return [...source.matchAll(/useCachedPromise\(/g)].map((match) => {
+      const after = source.slice(match.index);
+      const args = /\n\s*(\[[^\]\n]*\])\s*,/.exec(after)?.[1] ?? "";
+      return [file, args] as const;
+    });
+  });
+
+  it("finds hook calls to check", () => {
+    expect(calls.length).toBeGreaterThan(0);
+  });
+
+  it.each(calls)("%s keys its cache on the instance: %s", (_file, args) => {
+    expect(args).toMatch(/^\[instance\.id\b/);
+  });
+});
