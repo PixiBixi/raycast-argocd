@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ArgoClient, type ClientDeps } from "../../../src/lib/argocd/client";
+import { ArgoClient, classifyStreamFailure, type ClientDeps } from "../../../src/lib/argocd/client";
 import {
   ApiError,
   ForbiddenError,
@@ -8,6 +8,7 @@ import {
   ReadOnlyInstanceError,
   TimeoutError,
 } from "../../../src/lib/argocd/errors";
+import { MalformedListError } from "../../../src/lib/argocd/stream";
 import { AuthError } from "../../../src/lib/auth/provider";
 import type { ArgoInstance } from "../../../src/lib/config/instances";
 
@@ -86,11 +87,23 @@ describe("listApplications", () => {
     expect(result.apps.map((app) => app.name)).toEqual(["app-one", "app-two"]);
   });
 
-  it("survives a response with no items", async () => {
-    const { fetchStub } = recorder(() => json({}));
+  it("accepts a null items array, which is how an empty list is serialised", async () => {
+    const { fetchStub } = recorder(() => json({ metadata: {}, items: null }));
     await expect(new ArgoClient(instance(), deps(fetchStub)).listApplications()).resolves.toEqual({
       apps: [],
     });
+  });
+
+  it("refuses a 200 with no items array instead of reporting an empty instance", async () => {
+    const { fetchStub } = recorder(() => json({}));
+    await expect(new ArgoClient(instance(), deps(fetchStub)).listApplications()).rejects.toThrowError(ApiError);
+  });
+
+  it("refuses an HTML page served with a 200, such as a captive portal", async () => {
+    const { fetchStub } = recorder(() => new Response("<html>Sign in</html>", { status: 200 }));
+    await expect(new ArgoClient(instance(), deps(fetchStub)).listApplications()).rejects.toThrowError(
+      /unexpected response/,
+    );
   });
 
   it("never materialises the list: the body is read as a stream, not with json()", async () => {
@@ -221,9 +234,93 @@ describe("error mapping", () => {
       }
       return json(APP_LIST);
     }) as unknown as typeof fetch;
-    await expect(new ArgoClient(instance(), deps(fetchStub)).listApplications(controller.signal)).rejects.toThrowError(
-      TimeoutError,
+    // A cancellation is not a timeout: the caller went away and nothing is reported.
+    await expect(new ArgoClient(instance(), deps(fetchStub)).listApplications(controller.signal)).rejects.toMatchObject(
+      { name: "AbortError" },
     );
+  });
+});
+
+/** A body that yields its chunks with a pause before each, and honours the request's abort. */
+function slowBody(
+  chunks: string[],
+  pauseMs: number,
+  signal: AbortSignal | null | undefined,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, pauseMs);
+        signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(signal.reason);
+        });
+      });
+      const chunk = chunks[index++];
+      if (chunk === undefined) {
+        controller.close();
+      } else {
+        controller.enqueue(encoder.encode(chunk));
+      }
+    },
+  });
+}
+
+function slowFetch(chunks: string[], pauseMs: number, headersAfterMs = 0): typeof fetch {
+  return (async (_input: unknown, init?: RequestInit) => {
+    const signal = init?.signal;
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, headersAfterMs);
+      signal?.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      });
+    });
+    return new Response(slowBody(chunks, pauseMs, signal), { status: 200 });
+  }) as unknown as typeof fetch;
+}
+
+describe("timeouts on a streamed list", () => {
+  const body = JSON.stringify(APP_LIST);
+  const parts = Array.from({ length: 8 }, (_, n) => body.slice((n * body.length) / 8, ((n + 1) * body.length) / 8));
+
+  it("lets a body that keeps arriving take longer than the timeout in total", async () => {
+    const client = new ArgoClient(instance(), deps(slowFetch(parts, 30), { timeoutMs: 100 }));
+    const result = await client.listApplications();
+    expect(result.apps.map((app) => app.name)).toEqual(["app-one", "app-two"]);
+  });
+
+  it("times out a body that stalls for longer than the timeout", async () => {
+    const client = new ArgoClient(instance(), deps(slowFetch([parts[0] as string, "x"], 150), { timeoutMs: 100 }));
+    await expect(client.listApplications()).rejects.toThrowError(TimeoutError);
+  });
+
+  it("times out a server that does not send its headers in time", async () => {
+    const client = new ArgoClient(instance(), deps(slowFetch(parts, 0, 150), { timeoutMs: 50 }));
+    await expect(client.listApplications()).rejects.toThrowError(TimeoutError);
+  });
+});
+
+describe("stream failure classification", () => {
+  it("reports a list that is not one as an API error, not a network failure", () => {
+    expect(classifyStreamFailure(new MalformedListError("no array"), "dev")).toBeInstanceOf(ApiError);
+  });
+
+  it("reports a body read failure as a network interruption", () => {
+    const failure = classifyStreamFailure(new TypeError("terminated"), "dev", true);
+    expect(failure).toBeInstanceOf(NetworkError);
+  });
+
+  it("reports a timeout during the body as a timeout", () => {
+    const abort = Object.assign(new Error("timed out"), { name: "TimeoutError" });
+    expect(classifyStreamFailure(abort, "dev", true)).toBeInstanceOf(TimeoutError);
+  });
+
+  it("lets a bug in the projection surface unchanged instead of blaming the network", () => {
+    const bug = new RangeError("projection bug");
+    expect(classifyStreamFailure(bug, "dev")).toBe(bug);
   });
 });
 

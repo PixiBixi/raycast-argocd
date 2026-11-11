@@ -21,7 +21,7 @@ import { AuthError } from "../auth/provider";
 import { ApiError, ForbiddenError, NetworkError, NotFoundError, ReadOnlyInstanceError, TimeoutError } from "./errors";
 import { projectAppSet, type AppSetSummary } from "./appset";
 import { projectDetail, projectResourceDiff, projectRevisionMetadata, projectSummary } from "./project";
-import { decodeStream, streamArrayItems } from "./stream";
+import { MalformedListError, decodeStream, streamArrayItems } from "./stream";
 import type { SyncRequest } from "./sync";
 import type { AppDetail, AppSummary, ResourceDiff, ResourceStatus, RevisionMetadata } from "./types";
 
@@ -82,30 +82,38 @@ export class ArgoClient {
     project: (item: unknown) => T | undefined,
     signal?: AbortSignal,
     query: Record<string, string> = {},
+    required = true,
   ): Promise<T[]> {
-    const response = await this.send("GET", path, query, undefined, signal);
-    if (!response.body) {
-      throw new ApiError(`${this.instance.name} returned an empty response.`, response.status);
-    }
-
-    const projected: T[] = [];
+    const deadline = this.deadline(signal);
     try {
-      await streamArrayItems(decodeStream(response.body), {
-        key: "items",
-        onItem: (item) => {
-          const value = project(item);
-          if (value !== undefined) {
-            projected.push(value);
-          }
-        },
-      });
-    } catch (error) {
-      if (isAbort(error)) {
-        throw new TimeoutError(`${this.instance.name} did not answer in time.`);
+      const response = await this.send("GET", path, query, undefined, deadline, signal);
+      if (!response.body) {
+        throw new ApiError(`${this.instance.name} returned an empty response.`, response.status);
       }
-      throw new NetworkError(`The connection to ${this.instance.name} was interrupted.`);
+
+      const projected: T[] = [];
+      try {
+        await streamArrayItems(watchBody(decodeStream(response.body), deadline), {
+          key: "items",
+          required,
+          onItem: (item) => {
+            const value = project(item);
+            if (value !== undefined) {
+              projected.push(value);
+            }
+          },
+        });
+      } catch (error) {
+        if (signal?.aborted) {
+          throw error;
+        }
+        const transport = error instanceof BodyReadError;
+        throw classifyStreamFailure(transport ? error.cause : error, this.instance.name, transport);
+      }
+      return projected;
+    } finally {
+      deadline.clear();
     }
-    return projected;
   }
 
   async getApplication(
@@ -147,11 +155,13 @@ export class ArgoClient {
       query.group = resource.group;
       query.version = resource.version;
     }
+    // `items` is omitempty in ManagedResourcesResponse, so `{}` is a valid empty answer here.
     return this.streamList(
       `/api/v1/applications/${encodeURIComponent(name)}/managed-resources`,
       projectResourceDiff,
       signal,
       query,
+      false,
     );
   }
 
@@ -204,15 +214,28 @@ export class ArgoClient {
     body: unknown,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    const response = await this.send(method, path, query, body, signal);
-    if (response.status === 204) {
-      return undefined;
-    }
+    // A single application is small, so one deadline covers the headers and the body.
+    const deadline = this.deadline(signal);
     try {
-      return await response.json();
-    } catch {
-      throw new ApiError(`${this.instance.name} returned a response that is not JSON.`, response.status);
+      const response = await this.send(method, path, query, body, deadline, signal);
+      if (response.status === 204) {
+        return undefined;
+      }
+      try {
+        return await response.json();
+      } catch (error) {
+        if (isAbort(error)) {
+          throw signal?.aborted ? error : new TimeoutError(`${this.instance.name} did not answer in time.`);
+        }
+        throw new ApiError(`${this.instance.name} returned a response that is not JSON.`, response.status);
+      }
+    } finally {
+      deadline.clear();
     }
+  }
+
+  private deadline(signal: AbortSignal | undefined): Deadline {
+    return new Deadline(this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS, signal);
   }
 
   /** Performs the request and maps a failure to a typed error, leaving the body unread. */
@@ -221,16 +244,14 @@ export class ArgoClient {
     path: string,
     query: Record<string, string>,
     body: unknown,
-    signal?: AbortSignal,
+    deadline: Deadline,
+    signal: AbortSignal | undefined,
   ): Promise<Response> {
     const token = await this.deps.getToken(this.instance);
     const url = new URL(`${this.instance.baseUrl}${path}`);
     for (const [key, value] of Object.entries(query)) {
       url.searchParams.set(key, value);
     }
-
-    const timeout = AbortSignal.timeout(this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-    const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
 
     // No Accept-Encoding here on purpose: Node's fetch negotiates gzip itself and decompresses
     // the body. Setting the header by hand is how you end up holding a compressed buffer.
@@ -247,12 +268,15 @@ export class ArgoClient {
       response = await this.deps.fetch(url.toString(), {
         method,
         headers,
-        signal: combined,
+        signal: deadline.signal,
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     } catch (error) {
       // The URL is deliberately absent from these messages: a query string can carry more than
       // it looks like, and these strings end up in toasts and in Raycast's log.
+      if (signal?.aborted) {
+        throw error;
+      }
       if (isAbort(error)) {
         throw new TimeoutError(`${this.instance.name} did not answer in time.`);
       }
@@ -297,6 +321,83 @@ function hostOf(baseUrl: string): string {
 
 function isAbort(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
+}
+
+/**
+ * A timer that aborts the request unless restarted. A list restarts it on every chunk, so the
+ * timeout bounds silence on the wire, not the download and scan of a 30 MB body.
+ */
+class Deadline {
+  private readonly controller = new AbortController();
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  readonly signal: AbortSignal;
+
+  constructor(
+    private readonly ms: number,
+    outer: AbortSignal | undefined,
+  ) {
+    this.signal = outer ? AbortSignal.any([outer, this.controller.signal]) : this.controller.signal;
+    this.restart();
+  }
+
+  restart(): void {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(
+      () => this.controller.abort(new DOMException("The request timed out.", "TimeoutError")),
+      this.ms,
+    );
+  }
+
+  clear(): void {
+    clearTimeout(this.timer);
+  }
+}
+
+/** Marks a failure to read the body, as opposed to an error raised while scanning it. */
+class BodyReadError extends Error {
+  constructor(cause: unknown) {
+    super("The response body could not be read.", { cause });
+    this.name = "BodyReadError";
+  }
+}
+
+async function* watchBody(chunks: AsyncIterable<string>, deadline: Deadline): AsyncGenerator<string> {
+  const iterator = chunks[Symbol.asyncIterator]();
+  try {
+    for (;;) {
+      let next: IteratorResult<string>;
+      try {
+        next = await iterator.next();
+      } catch (error) {
+        throw new BodyReadError(error);
+      }
+      if (next.done) {
+        return;
+      }
+      deadline.restart();
+      yield next.value;
+    }
+  } finally {
+    // Releases the body when the scan stops early, on the closing bracket or on an error.
+    await iterator.return?.().catch(() => undefined);
+  }
+}
+
+/**
+ * Maps a failure while streaming a list to what the operator should be told. Anything that is
+ * neither the transport nor a malformed body is a bug, and is rethrown unchanged.
+ */
+export function classifyStreamFailure(error: unknown, instanceName: string, transport = false): unknown {
+  if (error instanceof MalformedListError) {
+    return new ApiError(`${instanceName} returned an unexpected response instead of a list.`, 200);
+  }
+  if (isAbort(error)) {
+    return new TimeoutError(`${instanceName} did not answer in time.`);
+  }
+  if (transport) {
+    return new NetworkError(`The connection to ${instanceName} was interrupted.`);
+  }
+  return error;
 }
 
 /**

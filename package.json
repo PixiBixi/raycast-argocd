@@ -88,7 +88,7 @@
     {
       "name": "requestTimeoutSeconds",
       "title": "Request Timeout",
-      "description": "Seconds before an ArgoCD API request is aborted. Clamped to 3-120.",
+      "description": "Seconds an ArgoCD API request may wait on the server, for its answer and between chunks of a large list. Clamped to 3-120.",
       "type": "textfield",
       "required": false,
       "default": "15"
